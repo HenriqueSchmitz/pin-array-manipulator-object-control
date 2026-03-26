@@ -12,7 +12,7 @@ PIN_HEIGHT = 0.15
 ACTUATION_LENGTH = 0.1
 PIN_SPACING = 0.001
 
-target_pose = Pose(0.4, 0.4, 0)
+target_pose = Pose(0.1, -0.2, 0)
 
 manipulator = PinArrayManipulator(manipulator_size=MANIPULATOR_SIZE,
                                   pins_per_side=PINS_PER_SIDE,

@@ -36,45 +36,62 @@ class SimpleTranslationController(torch.nn.Module):
 
 class GeometricRampController(torch.nn.Module):
     
-    def __init__(self, ramp_gain: float = 0.5, cup_gain: float = 1.5, cup_depth: float = 0.4):
+    def __init__(self, array_size: float = 1.0, transition_dist: float = 0.2):
         """
-        ramp_gain: How much the whole floor tilts toward the target.
-        cup_gain: How steep the "walls" of the valley are.
-        cup_depth: How deep the center of the target 'dip' is.
+        array_size: The physical width/length of the pin array (for scaling).
+        transition_dist: Distance to target (normalized) where the ramp fades out.
         """
         super().__init__()
-        self.ramp_gain = ramp_gain
-        self.cup_gain = cup_gain
-        self.cup_depth = cup_depth
+        self.array_size = array_size
+        self.transition_dist = transition_dist
+        
+        # Tuning Parameters
+        self.ramp_gain = 2.0
+        self.cup_gain = 5.0
+        self.cup_depth = 0.5
+        self.track_width = 0.15 # Width of the lateral mask
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x contains: [move_dir_x, move_dir_y, pin_to_obj_x, pin_to_obj_y]
-        # Note: We need the pin's position relative to the TARGET for a stable cup.
+        # x: [move_vec(0:2), p2obj(2:4), p2tar(4:6)]
+        # 1. Normalize by array size so gains are scale-independent
+        move_vec = x[:, 0:2] / self.array_size
+        p2obj = x[:, 2:4] / self.array_size
+        p2tar = x[:, 4:6] / self.array_size
         
-        move_vec = x[:, 0:2] # Ball -> Target
-        pin_to_ball = x[:, 2:4] # Pin -> Ball
+        # 2. Global Distances
+        dist_bt = torch.norm(move_vec, dim=1, keepdim=True) + 1e-8
+        u = move_vec / dist_bt # Direction vector
         
-        # 1. Calculate Pin's position relative to the Target
-        # Pin_to_Target = (Pin -> Ball) + (Ball -> Target)
-        pin_to_target = pin_to_ball + move_vec
-        dist_to_target = torch.norm(move_vec, dim=1, keepdim=True) + 1e-8
-        unit_move_dir = move_vec / dist_to_target
+        # 3. Dynamic Blending Factor (Alpha)
+        # Using tanh creates a smooth transition as the ball approaches
+        # ramp_weight is 1.0 when far, 0.0 when at target
+        ramp_weight = torch.tanh(dist_bt / self.transition_dist)
 
-        # 2. THE RAMP: Projection of the pin along the movement axis
-        # This creates a steady slope that is high behind the ball and low at target
-        ramp_proj = torch.sum(pin_to_target * unit_move_dir, dim=1, keepdim=True)
-        ramp_height = ramp_proj * self.ramp_gain
+        # 4. Ramp Logic (Behind the ball)
+        # obj_to_pin projection
+        obj_to_pin = -p2obj
+        d_parallel = torch.sum(obj_to_pin * u, dim=1, keepdim=True)
+        d_perp = torch.norm(obj_to_pin - (d_parallel * u), dim=1, keepdim=True)
+        
+        # High behind the ball, sloping down toward it
+        h_ramp = torch.clamp(-d_parallel * self.ramp_gain, min=0.0)
 
-        # 3. THE CUP: Quadratic distance from the target
-        # This creates the "valley" walls. Pins further from target go UP.
-        radial_dist = torch.norm(pin_to_target, dim=1, keepdim=True)
-        cup_height = (radial_dist ** 2) * self.cup_gain - self.cup_depth
+        # 5. Cup Logic (Around the target)
+        dist_p2tar = torch.norm(p2tar, dim=1, keepdim=True)
+        # Parabolic dip: lowest at target, rises in all directions
+        h_cup = (dist_p2tar**2) * self.cup_gain - self.cup_depth
 
-        # 4. COMBINE: The sum of the tilt and the bowl
-        # We use tanh to keep the values smooth and within [-1, 1]
-        combined_height = torch.tanh(ramp_height + cup_height)
+        # 6. Lateral Masking (Only affect pins near the movement line)
+        # The mask also "widens" into a full circle at the target
+        line_mask = torch.exp(-(d_perp**2) / (2 * self.track_width**2))
+        # Mix the line mask with a circular mask near the target
+        total_mask = torch.max(line_mask, torch.exp(-(dist_p2tar**2) / 0.1))
 
-        return combined_height
+        # 7. Combine: Ramp fades out as we get closer, Cup is always present
+        # but becomes the dominant shape at the end.
+        final_h = (ramp_weight * h_ramp) + h_cup
+        
+        return torch.clamp(final_h * total_mask, -1.0, 1.0)
     
 
 class SimpleTranslationControlPolicy(ControlPolicy):
@@ -129,8 +146,9 @@ class FastTranslationControlPolicy(ControlPolicy):
         tar_pos = torch.tensor([state.target_pose.x, state.target_pose.y]).float()
         move_dir = tar_pos - obj_pos
         pin_to_obj = obj_pos - self.pin_coords
+        pin_to_tar = tar_pos - self.pin_coords
         batch_move = move_dir.repeat(self.pins_per_side**2, 1)
-        input_tensor = torch.cat([batch_move, pin_to_obj], dim=1)
+        input_tensor = torch.cat([batch_move, pin_to_obj, pin_to_tar], dim=1)
         with torch.no_grad():
             outputs = self.controller(input_tensor)
         self.control_tensor = outputs.view(self.pins_per_side, self.pins_per_side)
