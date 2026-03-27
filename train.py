@@ -23,6 +23,7 @@ manipulator = PinArrayManipulator(manipulator_size=MANIPULATOR_SIZE,
 object = Ball(diameter=0.1, starting_z=0.2)
 control_policy = SimpleTranslationControlPolicy(manipulator)
 environment = SimulationEnvironment(manipulator, [object])
+parameters = control_policy.parameters()
 
 def control_logic():
     state = EnvironmentState(object.get_pose(), target_pose)

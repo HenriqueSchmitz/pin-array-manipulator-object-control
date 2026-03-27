@@ -13,6 +13,9 @@ class SineWaveControlPolicy(ControlPolicy):
         self.direction = direction
         self.control_tensor = torch.zeros((pins_per_side, pins_per_side))
 
+    def parameters(self):
+        return []
+
     def update(self, state: EnvironmentState) -> None:
         self.wave_phase += self.wave_speed * self.direction
         change_direction = False

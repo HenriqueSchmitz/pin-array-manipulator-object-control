@@ -1,5 +1,5 @@
 from control.control_policy import EnvironmentState
-from control.simple_translation import FastTranslationControlPolicy
+from control.simple_translation import SimpleTranslationControlPolicy
 from environment import SimulationEnvironment
 from objects.ball import Ball
 from objects.object import Pose
@@ -19,10 +19,10 @@ manipulator = PinArrayManipulator(manipulator_size=MANIPULATOR_SIZE,
                                   pin_height=PIN_HEIGHT,
                                   actuation_length=ACTUATION_LENGTH,
                                   pin_spacing=PIN_SPACING,
-                                  has_wall=True)
+                                  has_wall=False)
 object = Ball(diameter=0.1, starting_z=0.2)
-# control_policy = SineWaveControlPolicy(pins_per_side=PINS_PER_SIDE)
-control_policy = FastTranslationControlPolicy(manipulator)
+control_policy = SineWaveControlPolicy(pins_per_side=PINS_PER_SIDE)
+# control_policy = SimpleTranslationControlPolicy(manipulator)
 environment = SimulationEnvironment(manipulator, [object])
 
 def control_logic():

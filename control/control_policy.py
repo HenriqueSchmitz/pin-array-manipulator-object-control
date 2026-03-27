@@ -21,5 +21,9 @@ class ControlPolicy(ABC):
     def update(self, state: EnvironmentState) -> None:
         raise NotImplementedError
     
+    @abstractmethod
+    def parameters(self):
+        raise NotImplementedError
+    
     def get_control_tensor(self) -> Tensor:
         return self.control_tensor

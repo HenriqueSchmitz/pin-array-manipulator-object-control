@@ -41,8 +41,8 @@ class PinArrayManipulator(Manipulator):
         for i in range(self.pins_per_side):
             for j in range(self.pins_per_side):
                 name = f"pin_{i}_{j}"
-                x = (i - self.pins_per_side/2) * self.pin_size_spaced
-                y = (j - self.pins_per_side/2) * self.pin_size_spaced
+                x = (i - (self.pins_per_side - 1)/2) * self.pin_size_spaced
+                y = (j - (self.pins_per_side - 1)/2) * self.pin_size_spaced
                 pins_xml += f"""
                 <body name="{name}" pos="{x} {y} 0">
                     <joint name="{name}_joint" type="slide" axis="0 0 1" range="-{self.actuation_length} {self.actuation_length}" damping="10"/>
@@ -52,12 +52,12 @@ class PinArrayManipulator(Manipulator):
             wall_thickness = 0.02
             wall_height = self.pin_height * 5
             half_size = self.manipulator_size / 2
-            min_pos = -half_size - self.pin_size -  wall_thickness
-            max_pos = half_size + self.pin_size + wall_thickness
-            rgba = "0.5 0.5 0.8 0.2" # The 0.2 alpha makes it transparent
+            min_pos = -half_size -  wall_thickness
+            max_pos = half_size + wall_thickness
+            rgba = "0.5 0.5 0.8 0.1"
 
             walls_xml = f"""
-            <body name="walls" pos="0 0 {wall_height/2}">
+            <body name="walls" pos="0 0 {wall_height/2 - self.pin_height}">
                 <geom name="wall_n" type="box" pos="0 {max_pos} 0" size="{half_size} {wall_thickness} {wall_height/2}" rgba="{rgba}"/>
                 <geom name="wall_s" type="box" pos="0 {min_pos} 0" size="{half_size} {wall_thickness} {wall_height/2}" rgba="{rgba}"/>
                 <geom name="wall_e" type="box" pos="{max_pos} 0 0" size="{wall_thickness} {half_size} {wall_height/2}" rgba="{rgba}"/>
