@@ -5,13 +5,14 @@ from gymnasium import spaces
 import numpy as np
 import mujoco
 import mujoco.viewer
-from mujoco import MjModel, MjData  # type: ignore
+from mujoco import MjModel, MjData # type: ignore
 
-from env.observation import PinArrayEnvObservation
-from env.rewards import RewardModel
-from env.target_generator import PinArrayTargetGenerator
-from manipulator.pin_array_manipulator import PinArrayManipulator, PinArrayManipulatorConfig
-from objects.object import Object
+
+from pin_array_manipulator_object_control.environment.observation import PinArrayEnvObservation
+from pin_array_manipulator_object_control.environment.rewards import RewardModel
+from pin_array_manipulator_object_control.environment.target_generator import PinArrayTargetGenerator
+from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulator, PinArrayManipulatorConfig
+from pin_array_manipulator_object_control.objects.object import Object
 
 
 

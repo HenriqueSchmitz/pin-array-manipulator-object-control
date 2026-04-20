@@ -4,7 +4,7 @@ from mujoco import MjData # type: ignore
 from torch import Tensor
 import numpy as np
 
-from manipulator.manipulator import Manipulator
+from pin_array_manipulator_object_control.manipulator.manipulator import Manipulator
 
 
 

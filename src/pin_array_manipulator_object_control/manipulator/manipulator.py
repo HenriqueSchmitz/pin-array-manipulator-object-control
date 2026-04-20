@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from objects.object import Object
+from pin_array_manipulator_object_control.objects.object import Object
 
 
 

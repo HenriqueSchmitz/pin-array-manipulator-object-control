@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from manipulator.pin_array_manipulator import PinArrayManipulatorConfig
-from objects.object import Pose
+from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
+from pin_array_manipulator_object_control.objects.object import Pose
 
 
 

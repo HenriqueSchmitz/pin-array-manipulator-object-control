@@ -1,6 +1,6 @@
 import numpy as np
 
-from objects.object import Pose, Velocity
+from pin_array_manipulator_object_control.objects.object import Pose, Velocity
 
 
 

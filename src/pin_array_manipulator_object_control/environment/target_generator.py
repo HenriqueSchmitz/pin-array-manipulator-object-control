@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from environment.observation import PinArrayEnvObservation
-from manipulator.pin_array_manipulator import PinArrayManipulatorConfig
-from objects.object import Pose
+from pin_array_manipulator_object_control.environment.observation import PinArrayEnvObservation
+from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
+from pin_array_manipulator_object_control.objects.object import Pose
+
 
 OUT_OF_BOUNDS_TEMPLATE = "Generated target out of bounds. Bounds: (x: {:.2f}-{:.2f}, y: {:.2f}-{:.2f}). Generated: {}"
 
