@@ -90,6 +90,10 @@ class Object(ABC):
     def generate_bodies(self):
         raise NotImplementedError
     
+    @abstractmethod
+    def generate_visual_body(self, name: str) -> str:
+        raise NotImplementedError
+    
     def set_data(self, data: MjData):
         self.data = data
 

@@ -1,2 +1,2 @@
 from .target_generator import PinArrayTargetGenerator
-from .single_target_no_termination import SingleTargetNoTerminationGenerator
+from .single_target import SingleTargetGenerator

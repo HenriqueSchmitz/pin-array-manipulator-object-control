@@ -82,6 +82,9 @@ class PinArrayManipulator(Manipulator):
             pins_xml += walls_xml
         return pins_xml
     
+    def generate_visual_body(self, name: str) -> str:
+        return ""
+    
     def generate_actuators(self):
         ctrl_min = -self.actuation_length
         ctrl_max = self.actuation_length

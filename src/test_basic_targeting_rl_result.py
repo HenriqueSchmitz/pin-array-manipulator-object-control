@@ -18,7 +18,10 @@ def main():
     )
     ball = Ball(diameter=0.1, starting_z=0.2)
     reward_model = Distance3DRewardModel(manipulator_config=config)
-    target_gen = MultiTargetGenerator(simulation_object=ball, manipulator_config=config, targets_to_generate=20)
+    target_gen = MultiTargetGenerator(simulation_object=ball,
+                                      manipulator_config=config,
+                                      targets_to_generate=5,
+                                      distance_threshold=0.1)
 
     # 2. Initialize Env in Human Mode
     env = PinArrayEnv(
@@ -41,7 +44,7 @@ def main():
     # 4. Visualization Loop
     obs, info = env.reset()
     print("Running policy... Press Ctrl+C to stop.")
-    
+    total_reward = 0.0
     try:
         while True:
             # The model predicts the best action based on current observation
@@ -49,9 +52,11 @@ def main():
             
             # Step the environment
             obs, reward, terminated, truncated, info = env.step(action)
+            total_reward += reward
             
             # Reset if the episode ends (though your generator likely keeps it going)
             if terminated or truncated:
+                print(f"Terminated: {terminated}, Truncated: {truncated}, Reward: {total_reward}")
                 obs, info = env.reset()
                 
     except KeyboardInterrupt:

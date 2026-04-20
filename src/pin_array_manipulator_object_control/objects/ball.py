@@ -23,6 +23,14 @@ class Ball(Object):
                 <geom type="sphere" size="{self.diameter}" rgba="1 0 0 1" mass="0.5"/>
             </body>"""
         return object_xml
+    
+    def generate_visual_body(self, name: str) -> str:
+        rgba: str = "1 0 0 0.3"
+        return f"""
+            <body name="{name}" mocap="true">
+                <geom type="sphere" size="{self.diameter}" rgba="{rgba}" 
+                      contype="0" conaffinity="0" group="1"/>
+            </body>"""
 
     def get_size(self) -> Size3D:
         return Size3D(self.diameter, self.diameter, self.diameter)

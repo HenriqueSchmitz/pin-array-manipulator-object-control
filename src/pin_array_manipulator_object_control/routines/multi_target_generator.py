@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import time
 from typing import Optional, List
 from pin_array_manipulator_object_control.routines.target_generator import PinArrayTargetGenerator
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
@@ -10,7 +11,7 @@ class MultiTargetGenerator(PinArrayTargetGenerator):
     def __init__(self, 
                  simulation_object: Object, 
                  manipulator_config: Optional[PinArrayManipulatorConfig] = None,
-                 distance_threshold: float = 0.05,
+                 distance_threshold: float = 0.01,
                  targets_to_generate: int = 5,
                  margin_factor: float = 0.8):
         super().__init__(simulation_object, manipulator_config)

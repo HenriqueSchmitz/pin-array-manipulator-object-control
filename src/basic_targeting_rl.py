@@ -7,19 +7,20 @@ from pin_array_manipulator_object_control.environment.pin_array_env import PinAr
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
-from pin_array_manipulator_object_control.routines.multi_target_generator import MultiTargetGenerator
+from pin_array_manipulator_object_control.routines.single_target import SingleTargetGenerator
 
 def train():
-    config = PinArrayManipulatorConfig(pins_per_side=10, has_wall=True)
+    config = PinArrayManipulatorConfig(pins_per_side=10, has_wall=False)
     ball = Ball(diameter=0.1, starting_z=0.2)
     reward_model = Distance3DRewardModel(manipulator_config=config)
-    target_gen = MultiTargetGenerator(simulation_object=ball, manipulator_config=config)
+    target_gen = SingleTargetGenerator(simulation_object=ball, manipulator_config=config, distance_threshold=0.1)
     env = PinArrayEnv(
         simulation_object=ball,
         target_generator=target_gen,
         reward_model=reward_model,
         manipulator_config=config,
-        render_mode=None # Set to "human" only for testing, not training
+        render_mode=None,
+        max_episode_steps=1000
     )
 
     model = PPO(
