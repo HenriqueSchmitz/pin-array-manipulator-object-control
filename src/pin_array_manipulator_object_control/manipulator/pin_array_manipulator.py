@@ -1,37 +1,52 @@
+from typing import Optional
+
 from mujoco import MjData # type: ignore
 from torch import Tensor
+import numpy as np
 
 from manipulator.manipulator import Manipulator
-from objects.object import Pose
 
 
 
-class PinArrayManipulator(Manipulator):
+class PinArrayManipulatorConfig():
     def __init__(self,
-                 name="pin_array_manipulator",
                  manipulator_size: float = 1.0,
                  pins_per_side: int = 10,
                  pin_height: float = 0.1,
                  actuation_length: float = 0.1,
                  pin_spacing: float = 0.0,
                  has_wall: bool = False):
-        super().__init__(name)
         self.manipulator_size = manipulator_size
         self.pins_per_side = pins_per_side
         self.pin_height = pin_height
         self.actuation_length = actuation_length
         self.pin_spacing = pin_spacing
         self.has_wall = has_wall
+        
 
-        self.spaces_per_side = pins_per_side - 1
-        manipulator_size_no_spaces = manipulator_size - pin_spacing * self.spaces_per_side
+class PinArrayManipulator(Manipulator):
+    def __init__(self,
+                 name="pin_array_manipulator",
+                 config: Optional[PinArrayManipulatorConfig] = None):
+        super().__init__(name)
+        if config is None:
+            config = PinArrayManipulatorConfig()
+        self.manipulator_size = config.manipulator_size
+        self.pins_per_side = config.pins_per_side
+        self.pin_height = config.pin_height
+        self.actuation_length = config.actuation_length
+        self.pin_spacing = config.pin_spacing
+        self.has_wall = config.has_wall
+
+        self.spaces_per_side = config.pins_per_side - 1
+        manipulator_size_no_spaces = config.manipulator_size - config.pin_spacing * self.spaces_per_side
         self.pin_size = manipulator_size_no_spaces / self.pins_per_side
-        self.pin_size_spaced = self.pin_size + pin_spacing
+        self.pin_size_spaced = self.pin_size + config.pin_spacing
         self.actuator_indices = []
         index = 0
-        for i in range(pins_per_side):
+        for i in range(config.pins_per_side):
             self.actuator_indices.append([])
-            for j in range(pins_per_side):
+            for j in range(config.pins_per_side):
                 self.actuator_indices[i].append(index)
                 index += 1
         self.data = None
@@ -75,6 +90,14 @@ class PinArrayManipulator(Manipulator):
                 name = f"pin_{i}_{j}"
                 actuators_xml += f'<position name="{name}_act" joint="{name}_joint" ctrlrange="{ctrl_min} {ctrl_max}" kp="2000"/>'
         return actuators_xml
+    
+    def actuate_from_matrix(self, matrix: np.matrix):
+        if matrix.shape != (self.pins_per_side, self.pins_per_side):
+            raise Exception("Matrix shape does not match manipulator size")
+        if not self.data:
+            raise Exception("Data not set")
+        flattened = matrix.flatten()
+        self.data.ctrl[:] = flattened
 
     def actuate_from_tensor_percentage(self, tensor: Tensor):
         if tensor.shape != (self.pins_per_side, self.pins_per_side):
@@ -96,7 +119,3 @@ class PinArrayManipulator(Manipulator):
     def get_pin_index(self, i, j):
         return self.actuator_indices[i][j]
     
-    def get_pin_pose(self, i, j) -> Pose:
-        x = (i - self.pins_per_side/2) * self.pin_size_spaced
-        y = (j - self.pins_per_side/2) * self.pin_size_spaced
-        return Pose(x, y, 0)

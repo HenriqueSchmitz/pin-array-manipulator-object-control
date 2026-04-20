@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=82.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pin-array-manipulator-object-control"
+version = "0.1.0"
+authors = [
+  { name="Henrique Schmitz", email="sch.henrique@gmail.com" },
+]
+description = "Code used for reinforcement learning on mujoco simulation environment training policy to move objects only with up/down movement of pins in an array"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+license = {file = "LICENSE"}
+dependencies = [
+  "mujoco"
+]
+
+[project.urls]
+github = "https://github.com/HenriqueSchmitz/pin-array-manipulator-object-control"
+
+[pycodestyle]
+max_line_length = 120
