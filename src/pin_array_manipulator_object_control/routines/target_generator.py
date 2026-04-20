@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from pin_array_manipulator_object_control.environment.observation import PinArrayEnvObservation
+from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
-from pin_array_manipulator_object_control.objects.object import Pose
+from pin_array_manipulator_object_control.objects.object import Object, Pose
 
 
 OUT_OF_BOUNDS_TEMPLATE = "Generated target out of bounds. Bounds: (x: {:.2f}-{:.2f}, y: {:.2f}-{:.2f}). Generated: {}"
@@ -12,7 +12,8 @@ OUT_OF_BOUNDS_TEMPLATE = "Generated target out of bounds. Bounds: (x: {:.2f}-{:.
 
 class PinArrayTargetGenerator(ABC):
 
-    def __init__(self, manipulator_config: Optional[PinArrayManipulatorConfig] = None):
+    def __init__(self, simulation_object: Object, manipulator_config: Optional[PinArrayManipulatorConfig] = None):
+        self.simulation_object = simulation_object
         if manipulator_config is None:
             manipulator_config = PinArrayManipulatorConfig()
         self.manipulator_config = manipulator_config

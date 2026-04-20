@@ -5,6 +5,7 @@ from torch import Tensor
 import numpy as np
 
 from pin_array_manipulator_object_control.manipulator.manipulator import Manipulator
+from pin_array_manipulator_object_control.objects.object import Size3D
 
 
 
@@ -97,7 +98,8 @@ class PinArrayManipulator(Manipulator):
         if not self.data:
             raise Exception("Data not set")
         flattened = matrix.flatten()
-        self.data.ctrl[:] = flattened
+        scaled = flattened * self.actuation_length
+        self.data.ctrl[:] = scaled
 
     def actuate_from_tensor_percentage(self, tensor: Tensor):
         if tensor.shape != (self.pins_per_side, self.pins_per_side):
@@ -119,3 +121,5 @@ class PinArrayManipulator(Manipulator):
     def get_pin_index(self, i, j):
         return self.actuator_indices[i][j]
     
+    def get_size(self) -> Size3D:
+        return Size3D(self.manipulator_size/2, self.manipulator_size/2, self.pin_height)

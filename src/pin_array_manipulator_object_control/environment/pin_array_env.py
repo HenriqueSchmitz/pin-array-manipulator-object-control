@@ -8,9 +8,9 @@ import mujoco.viewer
 from mujoco import MjModel, MjData # type: ignore
 
 
-from pin_array_manipulator_object_control.environment.observation import PinArrayEnvObservation
-from pin_array_manipulator_object_control.environment.rewards import RewardModel
-from pin_array_manipulator_object_control.environment.target_generator import PinArrayTargetGenerator
+from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
+from pin_array_manipulator_object_control.rewards.base_model import RewardModel
+from pin_array_manipulator_object_control.routines.target_generator import PinArrayTargetGenerator
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulator, PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.object import Object
 
@@ -61,8 +61,9 @@ class PinArrayEnv(gym.Env):
         return observation
     
     def _build_info(self, observation: PinArrayEnvObservation) -> dict[str, Any]:
+        target_array = self.current_target.array() if self.current_target is not None else np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         return {
-            "target": self.current_target
+            "target": target_array
         }
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):

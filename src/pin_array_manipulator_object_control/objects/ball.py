@@ -1,4 +1,4 @@
-from pin_array_manipulator_object_control.objects.object import Object
+from pin_array_manipulator_object_control.objects.object import Object, Size3D
 
 
 
@@ -23,3 +23,6 @@ class Ball(Object):
                 <geom type="sphere" size="{self.diameter}" rgba="1 0 0 1" mass="0.5"/>
             </body>"""
         return object_xml
+
+    def get_size(self) -> Size3D:
+        return Size3D(self.diameter, self.diameter, self.diameter)

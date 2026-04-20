@@ -12,9 +12,9 @@ class PinArrayEnvObservation():
         self.pin_forces = pin_forces
 
     def array(self):
-        return np.array([
+        return np.concatenate([
             self.object_pose.array(),
             self.object_velocity.array(),
-            self.pin_positions,
-            self.pin_forces
-        ])
+            self.pin_positions.flatten(),
+            self.pin_forces.flatten()
+        ]).astype(np.float32)

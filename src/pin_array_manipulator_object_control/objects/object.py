@@ -23,6 +23,22 @@ class Translation():
     
     def length(self) -> float:
         return (self.x**2 + self.y**2 + self.z**2)**0.5
+    
+
+class Size3D():
+    def __init__(self, x: float, y: float, z: float):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def array(self) -> np.ndarray:
+        return np.array(self.list())
+    
+    def list(self) -> list:
+        return [self.x, self.y, self.z]
+
+    def __str__(self):
+        return f"({self.x}, {self.y}, {self.z})"
 
 
 class Pose():
@@ -76,6 +92,10 @@ class Object(ABC):
     
     def set_data(self, data: MjData):
         self.data = data
+
+    @abstractmethod
+    def get_size(self) -> Size3D:
+        raise NotImplementedError
     
     def get_pose(self) -> Pose:
         if not self.data:
