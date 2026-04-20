@@ -17,7 +17,9 @@ classifiers = [
 ]
 license = {file = "LICENSE"}
 dependencies = [
-  "mujoco"
+  "mujoco",
+  "gymnasium",
+  "coloredlogs"
 ]
 
 [project.urls]
