@@ -12,7 +12,7 @@ from pin_array_manipulator_object_control.manipulator.observation import PinArra
 from pin_array_manipulator_object_control.rewards.base_model import RewardModel
 from pin_array_manipulator_object_control.routines.target_generator import PinArrayTargetGenerator
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulator, PinArrayManipulatorConfig
-from pin_array_manipulator_object_control.objects.object import Object
+from pin_array_manipulator_object_control.objects.object import Object, Pose
 
 
 
@@ -38,7 +38,7 @@ class PinArrayEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
-            shape=(9,), 
+            shape=(18,), 
             dtype=np.float32
         )
         self.simulation_object = simulation_object
@@ -52,7 +52,9 @@ class PinArrayEnv(gym.Env):
         self.current_target = None
 
     def _get_obs(self):
+        target_pose = self.current_target if self.current_target is not None else Pose(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         observation = PinArrayEnvObservation(
+            target_pose=target_pose,
             object_pose = self.simulation_object.get_pose(),
             object_velocity = self.simulation_object.get_velocity(),
             pin_positions=np.array([]),
@@ -75,6 +77,7 @@ class PinArrayEnv(gym.Env):
         self.simulation_object.set_data(self.data)
         if self.render_mode == "human" and self.viewer is None:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+        mujoco.mj_forward(self.model, self.data) # type: ignore
         observation = self._get_obs()
         self.target_generator.reset()
         self.current_target = self.target_generator.get_current_target(observation)
@@ -96,7 +99,7 @@ class PinArrayEnv(gym.Env):
         info = self._build_info(observation)
         if self.render_mode == "human":
             self.viewer.sync() # type: ignore
-        return self._get_obs(), reward, terminated, truncated, info
+        return self._get_obs().array(), reward, terminated, truncated, info
 
     def _generate_xml(self):
         manip_body = self.manipulator.generate_bodies()

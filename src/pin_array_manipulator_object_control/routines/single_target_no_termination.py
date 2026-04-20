@@ -19,7 +19,7 @@ class SingleTargetNoTerminationGenerator(PinArrayTargetGenerator):
     def reset(self) -> None:
         pass
 
-    def _generate_target(self, observation: PinArrayEnvObservation) -> Pose:
+    def _generate_target(self, observation: PinArrayEnvObservation) -> Optional[Pose]:
         obj_size = self.simulation_object.get_size()
         safe_half_size = (self.manipulator_config.manipulator_size * self.margin_factor) / 2
         limit_x = safe_half_size - (obj_size.x / 2)

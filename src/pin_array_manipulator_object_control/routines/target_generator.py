@@ -26,8 +26,10 @@ class PinArrayTargetGenerator(ABC):
     def reset(self) -> None:
         raise NotImplementedError
     
-    def get_current_target(self, observation: PinArrayEnvObservation) -> Pose:
+    def get_current_target(self, observation: PinArrayEnvObservation) -> Optional[Pose]:
         proposed_target = self._generate_target(observation)
+        if proposed_target is None:
+            return None
         p_x = proposed_target.x
         p_y = proposed_target.y
         if not (self.min_x < p_x < self.max_x and self.min_y < p_y < self.max_y):
@@ -41,5 +43,5 @@ class PinArrayTargetGenerator(ABC):
         return proposed_target
     
     @abstractmethod
-    def _generate_target(self, observation: PinArrayEnvObservation) -> Pose:
+    def _generate_target(self, observation: PinArrayEnvObservation) -> Optional[Pose]:
         raise NotImplementedError

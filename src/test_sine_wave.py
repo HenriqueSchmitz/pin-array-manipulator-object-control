@@ -45,6 +45,7 @@ def main():
         print("Simulation stopped by user.")
     finally:
         env.close()
+    print("Simulation complete.")
 
 if __name__ == "__main__":
     main()
