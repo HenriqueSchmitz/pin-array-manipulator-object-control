@@ -120,13 +120,17 @@ class PinArrayEnv(gym.Env):
         return self._get_obs().array(), reward, terminated, truncated, info
 
     def _generate_xml(self):
+        manip_assets = self.manipulator.generate_assets()
         manip_body = self.manipulator.generate_bodies()
         manip_act = self.manipulator.generate_actuators()
+        object_assets = self.simulation_object.generate_assets()
         object_body = self.simulation_object.generate_bodies()
         target_visual = self.simulation_object.generate_visual_body(name="target_visualizer")
         return f"""
         <mujoco>
             <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81"/>
+            {manip_assets}
+            {object_assets}
             <worldbody>
                 <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
                 {manip_body}

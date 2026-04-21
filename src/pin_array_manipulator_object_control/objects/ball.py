@@ -34,3 +34,6 @@ class Ball(Object):
 
     def get_size(self) -> Size3D:
         return Size3D(self.diameter, self.diameter, self.diameter)
+    
+    def generate_assets(self) -> str:
+        return ""

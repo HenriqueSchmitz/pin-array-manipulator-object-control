@@ -14,7 +14,8 @@ def main():
     config = PinArrayManipulatorConfig(
         pins_per_side=10, 
         has_wall=True,
-        pin_spacing=0.001
+        pin_spacing=0.001,
+        rounded_pins=True
     )
     ball = Ball(diameter=0.1, starting_z=0.2)
     reward_model = Distance3DRewardModel(manipulator_config=config)

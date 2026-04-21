@@ -120,3 +120,7 @@ class Object(ABC):
             lin_x=v[3], lin_y=v[4], lin_z=v[5],
             ang_x=v[0], ang_y=v[1], ang_z=v[2]
         )
+    
+    @abstractmethod
+    def generate_assets(self) -> str:
+        raise NotImplementedError

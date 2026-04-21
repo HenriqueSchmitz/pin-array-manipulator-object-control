@@ -10,6 +10,7 @@ class SineWaveControlPolicy(ControlPolicy):
     def __init__(self, manipulator_config: PinArrayManipulatorConfig, wave_phase: float = 0.0, wave_speed: float = 0.003, direction: int = 1):
         self.manipulator_config = manipulator_config
         self.pins_per_side = manipulator_config.pins_per_side
+        self.actuation_length = manipulator_config.actuation_length
         self.wave_phase = wave_phase
         self.wave_speed = wave_speed
         self.direction = direction
@@ -20,7 +21,7 @@ class SineWaveControlPolicy(ControlPolicy):
         control_output = np.zeros((self.pins_per_side, self.pins_per_side))
         for i in range(self.pins_per_side):
             for j in range(self.pins_per_side):
-                pin_output = np.sin(self.wave_phase + (i + j) * 0.5)
+                pin_output = np.sin(self.wave_phase + (i + j) * 0.5)*self.actuation_length
                 control_output[i, j] = pin_output
                 if self.has_reached_end(i, j, pin_output):
                     change_direction = True

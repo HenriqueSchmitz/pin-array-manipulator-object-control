@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from mujoco import MjData # type: ignore
@@ -16,13 +17,15 @@ class PinArrayManipulatorConfig():
                  pin_height: float = 0.1,
                  actuation_length: float = 0.1,
                  pin_spacing: float = 0.0,
-                 has_wall: bool = False):
+                 has_wall: bool = False,
+                 rounded_pins: bool = False):
         self.manipulator_size = manipulator_size
         self.pins_per_side = pins_per_side
         self.pin_height = pin_height
         self.actuation_length = actuation_length
         self.pin_spacing = pin_spacing
         self.has_wall = has_wall
+        self.rounded_pins = rounded_pins
         
 
 class PinArrayManipulator(Manipulator):
@@ -38,6 +41,7 @@ class PinArrayManipulator(Manipulator):
         self.actuation_length = config.actuation_length
         self.pin_spacing = config.pin_spacing
         self.has_wall = config.has_wall
+        self.rounded_pins = config.rounded_pins
 
         self.spaces_per_side = config.pins_per_side - 1
         manipulator_size_no_spaces = config.manipulator_size - config.pin_spacing * self.spaces_per_side
@@ -59,7 +63,18 @@ class PinArrayManipulator(Manipulator):
                 name = f"pin_{i}_{j}"
                 x = (i - (self.pins_per_side - 1)/2) * self.pin_size_spaced
                 y = (j - (self.pins_per_side - 1)/2) * self.pin_size_spaced
-                pins_xml += f"""
+                if self.rounded_pins:
+                    radius = self.pin_size / 2
+                    shaft_height = max(0.001, self.pin_height - radius)
+                    shaft_h_half = shaft_height / 2
+                    pins_xml += f"""
+                <body name="{name}" pos="{x} {y} 0">
+                    <joint name="{name}_joint" type="slide" axis="0 0 1" range="-{self.actuation_length} {self.actuation_length}" damping="10"/>
+                    <geom type="sphere" pos="0 0 {-radius}" size="{radius}" rgba="0.8 0.8 0.8 1" contype="2" conaffinity="1"/>
+                    <geom type="cylinder" pos="0 0 {-(shaft_h_half + radius)}" size="{radius} {shaft_h_half}" rgba="0.8 0.8 0.8 1" contype="2" conaffinity="1"/>
+                </body>"""
+                else:
+                    pins_xml += f"""
                 <body name="{name}" pos="{x} {y} 0">
                     <joint name="{name}_joint" type="slide" axis="0 0 1" range="-{self.actuation_length} {self.actuation_length}" damping="10"/>
                     <geom type="box" pos="0 0 {-self.pin_height/2}" size="{self.pin_size/2} {self.pin_size/2} {self.pin_height/2}" rgba="0.8 0.8 0.8 1" contype="2" conaffinity="1"/>
@@ -145,3 +160,6 @@ class PinArrayManipulator(Manipulator):
                 joint_name = f"pin_{i}_{j}_joint"
                 forces.append(self.data.joint(joint_name).qfrc_constraint[0])
         return np.array(forces, dtype=np.float32)
+    
+    def generate_assets(self) -> str:
+        return ""

@@ -10,7 +10,7 @@ from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DR
 from pin_array_manipulator_object_control.routines.single_target import SingleTargetGenerator
 
 def train():
-    config = PinArrayManipulatorConfig(pins_per_side=10, has_wall=False)
+    config = PinArrayManipulatorConfig(pins_per_side=10, has_wall=False, rounded_pins=True)
     ball = Ball(diameter=0.1, starting_z=0.2)
     reward_model = Distance3DRewardModel(manipulator_config=config)
     target_gen = SingleTargetGenerator(simulation_object=ball, manipulator_config=config, distance_threshold=0.1)
