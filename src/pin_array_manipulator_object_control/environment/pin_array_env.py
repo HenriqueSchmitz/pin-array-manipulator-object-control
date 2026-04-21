@@ -33,8 +33,8 @@ class PinArrayEnv(gym.Env):
             manipulator_config = PinArrayManipulatorConfig()
         self.target_pose = np.array([0.1, -0.2, 0.05]) # Target for the ball
         self.action_space = spaces.Box(
-            low=-1.0, 
-            high=1.0, 
+            low=-np.inf, 
+            high=np.inf, 
             shape=(manipulator_config.pins_per_side, manipulator_config.pins_per_side), 
             dtype=np.float32
         )
