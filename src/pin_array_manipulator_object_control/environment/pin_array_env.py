@@ -38,10 +38,12 @@ class PinArrayEnv(gym.Env):
             shape=(manipulator_config.pins_per_side, manipulator_config.pins_per_side), 
             dtype=np.float32
         )
+        num_pins = manipulator_config.pins_per_side ** 2
+        obs_shape = 18 + (2 * num_pins)
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
-            shape=(18,), 
+            shape=(obs_shape,), 
             dtype=np.float32
         )
         self.simulation_object = simulation_object
@@ -62,8 +64,8 @@ class PinArrayEnv(gym.Env):
             target_pose=target_pose,
             object_pose = self.simulation_object.get_pose(),
             object_velocity = self.simulation_object.get_velocity(),
-            pin_positions=np.array([]),
-            pin_forces=np.array([])
+            pin_positions=self.manipulator.get_pin_heights(),
+            pin_forces=self.manipulator.get_pin_forces()
         )
         return observation
     

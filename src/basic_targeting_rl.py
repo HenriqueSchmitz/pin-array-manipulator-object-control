@@ -35,8 +35,8 @@ def train():
 
     # 4. Train
     print("Starting training...")
-    checkpoint_callback = CheckpointCallback(save_freq=10000, save_path="./models/", name_prefix="ppo_pins")
-    model.learn(total_timesteps=500000, callback=checkpoint_callback)
+    checkpoint_callback = CheckpointCallback(save_freq=1000000, save_path="./models/", name_prefix="ppo_pins")
+    model.learn(total_timesteps=10000000, callback=checkpoint_callback)
 
     # 5. Save the final model
     model.save("ppo_pin_manipulator_final")

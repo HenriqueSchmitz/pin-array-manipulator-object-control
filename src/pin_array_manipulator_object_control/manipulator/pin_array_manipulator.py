@@ -101,8 +101,7 @@ class PinArrayManipulator(Manipulator):
         if not self.data:
             raise Exception("Data not set")
         flattened = matrix.flatten()
-        scaled = flattened * self.actuation_length
-        self.data.ctrl[:] = scaled
+        self.data.ctrl[:] = flattened
 
     def actuate_from_tensor_percentage(self, tensor: Tensor):
         if tensor.shape != (self.pins_per_side, self.pins_per_side):
@@ -126,3 +125,23 @@ class PinArrayManipulator(Manipulator):
     
     def get_size(self) -> Size3D:
         return Size3D(self.manipulator_size/2, self.manipulator_size/2, self.pin_height)
+    
+    def get_pin_heights(self) -> np.ndarray:
+        if self.data is None:
+            return np.zeros(self.pins_per_side ** 2)
+        heights = []
+        for i in range(self.pins_per_side):
+            for j in range(self.pins_per_side):
+                joint_name = f"pin_{i}_{j}_joint"
+                heights.append(self.data.joint(joint_name).qpos[0])
+        return np.array(heights, dtype=np.float32)
+
+    def get_pin_forces(self) -> np.ndarray:
+        if self.data is None:
+            return np.zeros(self.pins_per_side ** 2)
+        forces = []
+        for i in range(self.pins_per_side):
+            for j in range(self.pins_per_side):
+                joint_name = f"pin_{i}_{j}_joint"
+                forces.append(self.data.joint(joint_name).qfrc_constraint[0])
+        return np.array(forces, dtype=np.float32)
