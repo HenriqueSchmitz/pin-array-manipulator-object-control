@@ -18,6 +18,10 @@ class CompositeControlPolicy(ControlPolicy):
         self.contact_seeking_policy = ContactSeekingPolicy(manipulator_config, base_seek_speed, min_seek_speed)
         self.pose_shift_control_policy = PoseShiftControlPolicy(manipulator_config)
 
+    def update_contact_seeking_speeds(self, base_seek_speed, min_seek_speed):
+        self.contact_seeking_policy.base_seek_speed = base_seek_speed
+        self.contact_seeking_policy.min_seek_speed = min_seek_speed
+
     def sample(self, target: np.ndarray, observation: np.ndarray) -> np.ndarray:
         contact_seeking_heights = self.contact_seeking_policy.sample(target, observation)
         pose_shift_heights = self.pose_shift_control_policy.sample(target, observation)

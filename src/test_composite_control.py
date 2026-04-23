@@ -1,5 +1,6 @@
 import numpy as np
 from pin_array_manipulator_object_control.control.composite_control import CompositeControlPolicy
+from pin_array_manipulator_object_control.environment.composite_control_env import CompositeControlEnv
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
@@ -36,6 +37,9 @@ def define_movement_limit(number_of_pin_sizes: float, config: PinArrayManipulato
 
 
 
+BASE_SEEK_SPEED = 0.0005
+MIN_SEEK_SPEED = 0.0001
+
 config = PinArrayManipulatorConfig(
     manipulator_size=1.0,
     pins_per_side=15,
@@ -48,9 +52,8 @@ config = PinArrayManipulatorConfig(
 ball = Ball(diameter=0.1, starting_z=0.2)
 reward_model = Distance3DRewardModel(manipulator_config=config)
 target_generator = MultiTargetGenerator(simulation_object=ball, manipulator_config=config)
-policy = CompositeControlPolicy(manipulator_config=config, base_seek_speed=0.0005, min_seek_speed=0.0001)
 
-env = PinArrayEnv(
+env = CompositeControlEnv(
     simulation_object=ball,
     target_generator=target_generator,
     reward_model=reward_model,
@@ -66,7 +69,7 @@ def main():
         while not done:
             incremental_target_pose = calculate_incremental_target(obs, info, config, 0.2).array()
             env.update_debug_visuals(incremental_target_pose)
-            action = policy.sample(target=incremental_target_pose, observation=obs)
+            action = np.array([BASE_SEEK_SPEED, MIN_SEEK_SPEED, *incremental_target_pose])
             obs, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
