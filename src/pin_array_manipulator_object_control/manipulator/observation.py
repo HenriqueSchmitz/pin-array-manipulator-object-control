@@ -25,3 +25,19 @@ class PinArrayEnvObservation():
             self.pin_positions.flatten(),
             self.pin_forces.flatten()
         ]).astype(np.float32)
+    
+    @staticmethod
+    def from_array(array: np.ndarray, pins_per_side: int) -> 'PinArrayEnvObservation':
+        num_pins = pins_per_side ** 2
+        target_pose = Pose.from_array(array[0:6])
+        object_pose = Pose.from_array(array[6:12])
+        object_velocity = Velocity.from_array(array[12:18])
+        pin_positions = array[18 : 18 + num_pins].reshape(pins_per_side, pins_per_side)
+        pin_forces = array[18 + num_pins : 18 + 2 * num_pins].reshape(pins_per_side, pins_per_side)
+        return PinArrayEnvObservation(
+            target_pose=target_pose,
+            object_pose=object_pose,
+            object_velocity=object_velocity,
+            pin_positions=pin_positions,
+            pin_forces=pin_forces
+        )

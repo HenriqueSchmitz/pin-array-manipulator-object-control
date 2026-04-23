@@ -15,6 +15,10 @@ class Translation():
     def array(self) -> np.ndarray:
         return np.array(self.list())
     
+    @staticmethod
+    def from_array(array: np.ndarray) -> 'Translation':
+        return Translation(array[0], array[1], array[2])
+    
     def list(self) -> list:
         return [self.x, self.y, self.z]
 
@@ -34,6 +38,10 @@ class Size3D():
     def array(self) -> np.ndarray:
         return np.array(self.list())
     
+    @staticmethod
+    def from_array(array: np.ndarray) -> 'Size3D':
+        return Size3D(array[0], array[1], array[2])
+    
     def list(self) -> list:
         return [self.x, self.y, self.z]
 
@@ -49,6 +57,10 @@ class Pose():
 
     def array(self) -> np.ndarray:
         return np.array(self.list())
+    
+    @staticmethod
+    def from_array(array: np.ndarray) -> 'Pose':
+        return Pose(array[0], array[1], array[2], array[3], array[4], array[5])
     
     def list(self) -> list:
         return [self.x, self.y, self.z, self.roll, self.pitch, self.yaw]
@@ -72,6 +84,10 @@ class Velocity():
 
     def array(self) -> np.ndarray:
         return np.array(self.list())
+    
+    @staticmethod
+    def from_array(array: np.ndarray) -> 'Velocity':
+        return Velocity(array[0], array[1], array[2], array[3], array[4], array[5])
     
     def list(self) -> list:
         return [self.x, self.y, self.z, self.roll, self.pitch, self.yaw]
