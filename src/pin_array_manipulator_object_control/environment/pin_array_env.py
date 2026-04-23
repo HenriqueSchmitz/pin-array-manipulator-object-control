@@ -126,6 +126,10 @@ class PinArrayEnv(gym.Env):
         object_assets = self.simulation_object.generate_assets()
         object_body = self.simulation_object.generate_bodies()
         target_visual = self.simulation_object.generate_visual_body(name="target_visualizer")
+        incremental_visual = f"""
+        <body name="incremental_visualizer" mocap="true">
+            <geom type="sphere" size="0.1" rgba="0 0 1 0.2" contype="0" conaffinity="0" group="1"/>
+        </body>"""
         return f"""
         <mujoco>
             <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81"/>
@@ -136,6 +140,7 @@ class PinArrayEnv(gym.Env):
                 {manip_body}
                 {object_body}
                 {target_visual}
+                {incremental_visual}
             </worldbody>
             <actuator>
                 {manip_act}
@@ -165,3 +170,12 @@ class PinArrayEnv(gym.Env):
         ], degrees=True)
         quat = r.as_quat()
         self.data.mocap_quat[0] = [quat[3], quat[0], quat[1], quat[2]]
+        
+    def update_debug_visuals(self, incremental_pose_array):
+        """Updates the green sphere to show the sub-goal."""
+        if self.data is None: return
+        # mocap_pos[0] is target_visualizer, mocap_pos[1] is incremental_visualizer
+        self.data.mocap_pos[1] = incremental_pose_array[:3]
+        r = R.from_euler('xyz', incremental_pose_array[3:], degrees=True)
+        quat = r.as_quat()
+        self.data.mocap_quat[1] = [quat[3], quat[0], quat[1], quat[2]]
