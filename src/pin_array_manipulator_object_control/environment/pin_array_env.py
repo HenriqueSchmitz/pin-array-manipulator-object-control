@@ -107,7 +107,7 @@ class PinArrayEnv(gym.Env):
         else:
             reward = self.reward_model.get_reward(target_pose=self.current_target, object_pose=observation.object_pose)
             terminated = False
-        truncated = self.max_episode_steps > 0 and self._elapsed_steps >= self.max_episode_steps
+        truncated = self._is_truncated()
         self.current_target = self.target_generator.get_current_target(observation)
         info = self._build_info(observation)
         if self.render_mode == "human":
@@ -179,3 +179,8 @@ class PinArrayEnv(gym.Env):
         r = R.from_euler('xyz', incremental_pose_array[3:], degrees=True)
         quat = r.as_quat()
         self.data.mocap_quat[1] = [quat[3], quat[0], quat[1], quat[2]]
+
+    def _is_truncated(self):
+        viewer_closed = self.render_mode == "human" and self.viewer is not None and not self.viewer.is_running()
+        reached_max_steps = self.max_episode_steps > 0 and self._elapsed_steps >= self.max_episode_steps
+        return reached_max_steps or viewer_closed
