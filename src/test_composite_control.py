@@ -67,7 +67,7 @@ def main():
 
     try:
         while not done:
-            incremental_target_pose = calculate_incremental_target(obs, info, config, 0.2).array()
+            incremental_target_pose = calculate_incremental_target(obs, info, config, 0.4).array()
             env.update_debug_visuals(incremental_target_pose)
             action = np.array([BASE_SEEK_SPEED, MIN_SEEK_SPEED, *incremental_target_pose])
             obs, _, terminated, truncated, info = env.step(action)
