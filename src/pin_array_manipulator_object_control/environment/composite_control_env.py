@@ -34,7 +34,7 @@ class CompositeControlEnv(PinArrayEnv):
         manipulator_size = manipulator_config.manipulator_size
         self.action_space = spaces.Box(
             low=-2*manipulator_size, 
-            high=2*manipulator_size
+            high=2*manipulator_size,
             shape=(action_space_length,), 
             dtype=np.float32
         )
