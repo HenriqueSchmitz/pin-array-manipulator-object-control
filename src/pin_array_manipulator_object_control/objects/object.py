@@ -28,6 +28,15 @@ class Translation():
     def length(self) -> float:
         return (self.x**2 + self.y**2 + self.z**2)**0.5
     
+    def resize(self, target_length: float) -> 'Translation':
+        scale = target_length / self.length()
+        return Translation(self.x * scale, self.y * scale, self.z * scale)
+    
+    def __add__(self, other: 'Translation') -> 'Translation':
+        if isinstance(other, Translation):
+            return Translation(self.x + other.x, self.y + other.y, self.z + other.z)
+        return NotImplemented
+    
 
 class Size3D():
     def __init__(self, x: float, y: float, z: float):
@@ -71,6 +80,22 @@ class Pose():
     
     def translation_to(self, other) -> Translation:
         return Translation(other.x - self.x, other.y - self.y, other.z - self.z)
+    
+    def __add__(self, other) -> 'Pose':
+        if isinstance(other, Pose):
+            return Pose(
+                self.x + other.x, self.y + other.y, self.z + other.z,
+                self.roll + other.roll, self.pitch + other.pitch, self.yaw + other.yaw
+            )
+        elif isinstance(other, Translation):
+            return Pose(
+                self.x + other.x, self.y + other.y, self.z + other.z,
+                self.roll, self.pitch, self.yaw
+            )
+        return NotImplemented
+
+    def __radd__(self, other) -> 'Pose':
+        return self.__add__(other)
     
 
 class Velocity():
