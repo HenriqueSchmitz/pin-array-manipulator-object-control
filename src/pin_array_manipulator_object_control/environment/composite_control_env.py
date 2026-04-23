@@ -31,9 +31,10 @@ class CompositeControlEnv(PinArrayEnv):
         incremental_pose_action_length = 6
         contact_seeking_speeds_action_length = 2
         action_space_length = incremental_pose_action_length + contact_seeking_speeds_action_length
+        manipulator_size = manipulator_config.manipulator_size
         self.action_space = spaces.Box(
-            low=-np.inf, 
-            high=np.inf, 
+            low=-2*manipulator_size, 
+            high=2*manipulator_size
             shape=(action_space_length,), 
             dtype=np.float32
         )
