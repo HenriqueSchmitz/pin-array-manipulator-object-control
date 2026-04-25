@@ -48,6 +48,13 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+src/ppo_pose_delta_logs
+src/ppo_pose_trajectory_logs
+src/ppo_simple_waypoint_logs
+src/ppo_subgoal_logs
+src/ppo_pose_trajectory.zip
+src/ppo_simple_waypoint.zip
+src/ppo_subgoal_pin_array.zip
 .pytest_cache/
 cover/
 
