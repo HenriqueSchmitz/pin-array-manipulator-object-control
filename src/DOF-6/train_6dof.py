@@ -1,3 +1,14 @@
+import sys
+from pathlib import Path
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+from rl_common import setup, save_model
+PATHS = setup(__file__, "ppo_6dof", "ppo_6dof_residual")
+
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
 from gymnasium import spaces
 
@@ -44,7 +55,7 @@ def calculate_incremental_target(
     return obs_obj.object_pose + translation.resize(max_step)
 
 
-class ResidualWaypointRLEnv(CompositeControlEnv):
+class Residual6DOFRLEnv(CompositeControlEnv):
     def __init__(self, *args, manipulator_config: PinArrayManipulatorConfig, **kwargs):
         self.wrapper_max_episode_steps = int(kwargs.pop("max_episode_steps", 2000))
         super().__init__(*args, manipulator_config=manipulator_config, **kwargs)
@@ -52,60 +63,78 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         self.config = manipulator_config
         self.raw_obs_dim = int(np.prod(self.observation_space.shape))
 
+        # Observation:
+        # rel_pose[6],
+        # translation_dist[1],
+        # translation_dir[3],
+        # object_velocity[6],
+        # prev_pose_delta[6],
+        # normalized_time[1]
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(10,),
+            shape=(23,),
             dtype=np.float32,
         )
 
+        # Full 6DOF residual:
+        # [dx, dy, dz, droll, dpitch, dyaw]
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(2,),
+            shape=(6,),
             dtype=np.float32,
         )
 
         self.max_step_in_pin_sizes = 0.4
-        self.max_forward_residual = 0.004
-        self.max_lateral_residual = 0.004
+
+        # Assumes pose rotation units are radians.
+        # Keep these small. This is residual control, not raw pose control.
+        self.max_xyz_residual = np.array([0.004, 0.004, 0.002], dtype=np.float32)
+        self.max_rpy_residual = np.array([0.035, 0.035, 0.06], dtype=np.float32)
 
         self.base_seek_speed = BASE_SEEK_SPEED
         self.min_seek_speed = MIN_SEEK_SPEED
 
-        self.success_radius = 0.01
+        self.success_translation_radius = 0.01
+        self.success_rotation_radius = 0.15
 
         self.step_count = 0
         self.current_raw_obs = None
 
-        # Important: do NOT call this self.current_target.
-        # CompositeControlEnv / PinArrayEnv owns self.current_target and expects a Pose.
+        # Do NOT call this self.current_target.
+        # Base env owns self.current_target and expects a Pose.
         self.target_array = None
 
-        self.prev_object_pos = None
-        self.prev_dist = None
-        self.prev_move_xy = np.zeros(2, dtype=np.float32)
+        self.prev_object_pose = None
+        self.prev_translation_error = None
+        self.prev_rotation_error = None
+        self.prev_pose_delta = np.zeros(6, dtype=np.float32)
 
     def reset(self, **kwargs):
         raw_obs, info = super().reset(**kwargs)
 
         self.step_count = 0
         self.current_raw_obs = self._trim_raw_obs(raw_obs)
-
         self.target_array = np.asarray(info["target"], dtype=np.float32).copy()
 
-        object_pos = self._object_pos(self.current_raw_obs)
+        object_pose = self._object_pose_array(self.current_raw_obs)
 
-        self.prev_object_pos = object_pos.copy()
-        self.prev_dist = self._xy_distance(object_pos, self.target_array)
-        self.prev_move_xy = np.zeros(2, dtype=np.float32)
+        self.prev_object_pose = object_pose.copy()
+        self.prev_translation_error = self._translation_error(object_pose, self.target_array)
+        self.prev_rotation_error = self._rotation_error(object_pose, self.target_array)
+        self.prev_pose_delta = np.zeros(6, dtype=np.float32)
 
         out_info = dict(info)
         out_info["target"] = self.target_array.copy()
-        out_info["initial_distance"] = self.prev_dist
-        out_info["current_translation_error"] = self.prev_dist
-        out_info["distance_to_target"] = self.prev_dist
-        out_info["success"] = self.prev_dist <= self.success_radius
+        out_info["initial_translation_error"] = self.prev_translation_error
+        out_info["initial_rotation_error"] = self.prev_rotation_error
+        out_info["current_translation_error"] = self.prev_translation_error
+        out_info["current_rotation_error"] = self.prev_rotation_error
+        out_info["success"] = self._is_success(
+            self.prev_translation_error,
+            self.prev_rotation_error,
+        )
         out_info["is_success"] = out_info["success"]
 
         return self._compact_obs(self.current_raw_obs), out_info
@@ -155,11 +184,7 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
 
     def _action_to_composite_action(self, policy_action):
         raw_obs = self.current_raw_obs
-        obs_obj = self._parse_obs(raw_obs)
-
-        current_pose = obs_obj.object_pose.array().astype(np.float32)
-        current_xy = current_pose[:2]
-
+        object_pose = self._object_pose_array(raw_obs)
         target = self.target_array.copy()
 
         nominal_waypoint = calculate_incremental_target(
@@ -169,25 +194,13 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
             max_step_in_pin_sizes=self.max_step_in_pin_sizes,
         ).array().astype(np.float32)
 
-        goal_vec = target[:2] - current_xy
-        goal_dist = float(np.linalg.norm(goal_vec))
+        xyz_residual = policy_action[:3] * self.max_xyz_residual
+        rpy_residual = policy_action[3:] * self.max_rpy_residual
 
-        if goal_dist > 1e-8:
-            goal_dir = goal_vec / goal_dist
-        else:
-            goal_dir = np.zeros(2, dtype=np.float32)
-
-        tangent_dir = np.array([-goal_dir[1], goal_dir[0]], dtype=np.float32)
-
-        forward_residual = self.max_forward_residual * float(policy_action[0])
-        lateral_residual = self.max_lateral_residual * float(policy_action[1])
-
-        residual_xy = forward_residual * goal_dir + lateral_residual * tangent_dir
+        pose_residual = np.concatenate([xyz_residual, rpy_residual]).astype(np.float32)
 
         waypoint = nominal_waypoint.copy()
-        waypoint[0] += residual_xy[0]
-        waypoint[1] += residual_xy[1]
-        waypoint[2:] = nominal_waypoint[2:]
+        waypoint += pose_residual
 
         composite_action = np.concatenate(
             [
@@ -199,31 +212,43 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         return composite_action, {
             "executed_waypoint": waypoint.copy(),
             "nominal_waypoint": nominal_waypoint.copy(),
-            "goal_dist_at_plan": goal_dist,
-            "chosen_forward": float(forward_residual),
-            "chosen_lateral": float(lateral_residual),
+            "pose_residual": pose_residual.copy(),
+            "xyz_residual": xyz_residual.copy(),
+            "rpy_residual": rpy_residual.copy(),
             "raw_action": policy_action.copy(),
+            "goal_translation_dist_at_plan": self._translation_error(object_pose, target),
+            "goal_rotation_dist_at_plan": self._rotation_error(object_pose, target),
         }
 
     def _compute_reward(self, raw_obs):
-        object_pos = self._object_pos(raw_obs)
+        object_pose = self._object_pose_array(raw_obs)
 
-        curr_dist = self._xy_distance(object_pos, self.target_array)
-        progress = float(self.prev_dist - curr_dist)
+        translation_error = self._translation_error(object_pose, self.target_array)
+        rotation_error = self._rotation_error(object_pose, self.target_array)
 
-        move_vec = object_pos - self.prev_object_pos
-        move_xy_norm = float(np.linalg.norm(move_vec[:2]))
+        translation_progress = float(self.prev_translation_error - translation_error)
+        rotation_progress = float(self.prev_rotation_error - rotation_error)
 
-        success = curr_dist <= self.success_radius
+        pose_delta = object_pose - self.prev_object_pose
+        translation_move_norm = float(np.linalg.norm(pose_delta[:3]))
+        rotation_move_norm = float(np.linalg.norm(pose_delta[3:]))
 
-        progress_reward = 50.0 * progress
-        distance_penalty = -0.5 * curr_dist
+        success = self._is_success(translation_error, rotation_error)
+
+        translation_progress_reward = 50.0 * translation_progress
+        rotation_progress_reward = 2.0 * rotation_progress
+
+        translation_penalty = -0.5 * translation_error
+        rotation_penalty = -0.05 * rotation_error
+
         step_penalty = -0.002
         terminal_reward = 10.0 if success else 0.0
 
         reward_unclipped = (
-            progress_reward
-            + distance_penalty
+            translation_progress_reward
+            + rotation_progress_reward
+            + translation_penalty
+            + rotation_penalty
             + step_penalty
             + terminal_reward
         )
@@ -236,71 +261,96 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
             "object_out_of_bounds": False,
             "object_fell": False,
 
-            "current_pose_error": curr_dist,
-            "pose_error": curr_dist,
-            "current_translation_error": curr_dist,
-            "distance_to_target": curr_dist,
-            "current_distance": curr_dist,
+            "current_pose_error": translation_error,
+            "pose_error": translation_error,
 
-            "translation_progress": progress,
-            "progress_xy": progress,
+            "current_translation_error": translation_error,
+            "distance_to_target": translation_error,
+            "current_distance": translation_error,
 
-            "progress_reward": float(progress_reward),
-            "distance_penalty": float(distance_penalty),
+            "current_rotation_error": rotation_error,
+            "rotation_error": rotation_error,
+
+            "translation_progress": translation_progress,
+            "progress_xy": translation_progress,
+            "rotation_progress": rotation_progress,
+
+            "translation_progress_reward": float(translation_progress_reward),
+            "rotation_progress_reward": float(rotation_progress_reward),
+            "translation_penalty": float(translation_penalty),
+            "rotation_penalty": float(rotation_penalty),
             "step_penalty": float(step_penalty),
             "terminal_reward": float(terminal_reward),
             "reward_unclipped": float(reward_unclipped),
 
-            "move_norm": float(np.linalg.norm(move_vec)),
-            "move_xy_norm": move_xy_norm,
-            "z_movement": abs(float(move_vec[2])),
+            "move_norm": float(np.linalg.norm(pose_delta)),
+            "translation_move_norm": translation_move_norm,
+            "rotation_move_norm": rotation_move_norm,
+            "z_movement": abs(float(pose_delta[2])),
 
-            "current_object_pos": object_pos.copy(),
+            "current_object_pose": object_pose.copy(),
+            "current_object_pos": object_pose[:3].copy(),
         }
 
     def _compact_obs(self, raw_obs):
         obs_obj = self._parse_obs(raw_obs)
 
         object_pose = obs_obj.object_pose.array().astype(np.float32)
-        object_pos = object_pose[:3]
-
         object_vel = obs_obj.object_velocity.array().astype(np.float32)
 
-        rel_xy = self.target_array[:2].astype(np.float32) - object_pos[:2]
-        dist = float(np.linalg.norm(rel_xy))
+        rel_pose = self.target_array.astype(np.float32) - object_pose
 
-        if dist > 1e-8:
-            goal_dir = rel_xy / dist
+        rel_xyz = rel_pose[:3]
+        translation_dist = float(np.linalg.norm(rel_xyz))
+
+        if translation_dist > 1e-8:
+            translation_dir = rel_xyz / translation_dist
         else:
-            goal_dir = np.zeros(2, dtype=np.float32)
+            translation_dir = np.zeros(3, dtype=np.float32)
 
         normalized_time = float(self.step_count) / float(max(1, self.wrapper_max_episode_steps))
 
-        return np.array(
+        return np.concatenate(
             [
-                rel_xy[0],
-                rel_xy[1],
-                dist,
-                goal_dir[0],
-                goal_dir[1],
-                object_vel[0],
-                object_vel[1],
-                self.prev_move_xy[0],
-                self.prev_move_xy[1],
-                normalized_time,
-            ],
-            dtype=np.float32,
-        )
+                rel_pose.astype(np.float32),                         # 6
+                np.array([translation_dist], dtype=np.float32),       # 1
+                translation_dir.astype(np.float32),                   # 3
+                object_vel.astype(np.float32),                        # 6
+                self.prev_pose_delta.astype(np.float32),              # 6
+                np.array([normalized_time], dtype=np.float32),        # 1
+            ]
+        ).astype(np.float32)
 
     def _update_reward_state(self, reward_info):
-        new_pos = reward_info["current_object_pos"].copy()
-        self.prev_move_xy = (new_pos[:2] - self.prev_object_pos[:2]).astype(np.float32)
-        self.prev_object_pos = new_pos
-        self.prev_dist = float(reward_info["current_translation_error"])
+        new_pose = reward_info["current_object_pose"].copy()
 
-    def _object_pos(self, raw_obs):
+        self.prev_pose_delta = (new_pose - self.prev_object_pose).astype(np.float32)
+        self.prev_object_pose = new_pose
+
+        self.prev_translation_error = float(reward_info["current_translation_error"])
+        self.prev_rotation_error = float(reward_info["current_rotation_error"])
+
+    def _is_success(self, translation_error, rotation_error):
+        return (
+            translation_error <= self.success_translation_radius
+            and rotation_error <= self.success_rotation_radius
+        )
+
+    def _object_pose_array(self, raw_obs):
         obs_obj = self._parse_obs(raw_obs)
-        return obs_obj.object_pose.array().astype(np.float32)[:3].copy()
+        return obs_obj.object_pose.array().astype(np.float32).copy()
+
+    @staticmethod
+    def _translation_error(object_pose, target_pose):
+        object_pose = np.asarray(object_pose, dtype=np.float32)
+        target_pose = np.asarray(target_pose, dtype=np.float32)
+        return float(np.linalg.norm(object_pose[:3] - target_pose[:3]))
+
+    @staticmethod
+    def _rotation_error(object_pose, target_pose):
+        object_pose = np.asarray(object_pose, dtype=np.float32)
+        target_pose = np.asarray(target_pose, dtype=np.float32)
+        return float(np.linalg.norm(object_pose[3:] - target_pose[3:]))
 
     def _trim_raw_obs(self, obs):
         raw = np.asarray(obs, dtype=np.float32).reshape(-1)
@@ -309,12 +359,6 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
     def _parse_obs(self, obs):
         raw = self._trim_raw_obs(obs)
         return PinArrayEnvObservation.from_array(raw, self.config.pins_per_side)
-
-    @staticmethod
-    def _xy_distance(a, b):
-        a = np.asarray(a, dtype=np.float32)
-        b = np.asarray(b, dtype=np.float32)
-        return float(np.linalg.norm(a[:2] - b[:2]))
 
 
 def make_env(render_mode=None):
@@ -328,16 +372,17 @@ def make_env(render_mode=None):
         rounded_pins=True,
     )
 
-    ball = Ball(diameter=0.1, starting_z=0.2)
+    obj = Ball(diameter=0.1, starting_z=0.2)
+
     reward_model = Distance3DRewardModel(manipulator_config=config)
 
     target_generator = MultiTargetGenerator(
-        simulation_object=ball,
+        simulation_object=obj,
         manipulator_config=config,
     )
 
-    env = ResidualWaypointRLEnv(
-        simulation_object=ball,
+    env = Residual6DOFRLEnv(
+        simulation_object=obj,
         target_generator=target_generator,
         reward_model=reward_model,
         manipulator_config=config,
@@ -359,19 +404,21 @@ def make_one_env(rank, render_mode=None):
 
 
 def main():
+
     n_envs = 8
 
     env = SubprocVecEnv([make_one_env(i) for i in range(n_envs)])
 
+    print("run dir:", PATHS.run_dir)
     print("obs space:", env.observation_space)
     print("action space:", env.action_space)
 
     policy_kwargs = dict(
         net_arch=dict(
-            pi=[128, 128],
-            vf=[128, 128],
+            pi=[256, 256],
+            vf=[256, 256],
         ),
-        log_std_init=-1.0,
+        log_std_init=-1.2,
     )
 
     model = PPO(
@@ -379,7 +426,7 @@ def main():
         env,
         policy_kwargs=policy_kwargs,
         verbose=1,
-        tensorboard_log="ppo_simple_waypoint_logs/",
+        tensorboard_log=PATHS.tensorboard_log,
         learning_rate=1e-4,
         n_steps=4096 // n_envs,
         batch_size=512,
@@ -395,8 +442,7 @@ def main():
     )
 
     model.learn(total_timesteps=200_000)
-    model.save("ppo_simple_waypoint")
-
+    save_model(model, PATHS, "ppo_6dof_residual")
     env.close()
 
 

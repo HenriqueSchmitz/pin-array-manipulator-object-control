@@ -1,14 +1,16 @@
-from stable_baselines3 import PPO
+import sys
+from pathlib import Path
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+from rl_common import setup, load_model
+PATHS = setup(__file__, "test_2dof", "ppo_2dof_simple_waypoint")
 
-from train_rl_pose import make_env
-
-
-MODEL_PATH = "ppo_simple_waypoint"
-
+from train_2dof import make_env
 
 def main():
     env = make_env(render_mode="human")
-    model = PPO.load(MODEL_PATH, env=env)
+    model = load_model(PATHS, env=env)
 
     obs, info = env.reset()
     total_reward = 0.0
