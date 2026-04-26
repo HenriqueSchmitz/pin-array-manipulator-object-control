@@ -1,9 +1,12 @@
 import sys
 from pathlib import Path
+
 SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
 from rl_common import setup, save_model
+
 PATHS = setup(__file__, "ppo_2dof", "ppo_2dof_simple_waypoint")
 
 import numpy as np
@@ -17,7 +20,6 @@ from pin_array_manipulator_object_control.environment.composite_control_env impo
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
-from pin_array_manipulator_object_control.objects.object import Pose
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
 from pin_array_manipulator_object_control.routines.multi_target_generator import MultiTargetGenerator
 
@@ -26,33 +28,14 @@ BASE_SEEK_SPEED = 5e-4
 MIN_SEEK_SPEED = 1e-4
 
 
-def define_movement_limit(number_of_pin_sizes: float, config: PinArrayManipulatorConfig) -> float:
-    spaces_per_side = config.pins_per_side - 1
-    manipulator_size_no_spaces = config.manipulator_size - config.pin_spacing * spaces_per_side
-    pin_size = manipulator_size_no_spaces / config.pins_per_side
-    return pin_size * number_of_pin_sizes
+class DirectXYRLEnv(CompositeControlEnv):
+    """
+    No-cheat 2DOF env.
 
+    PPO directly chooses global XY waypoint deltas.
+    Henrique's CompositeControlEnv is still used only as the pose-to-pin controller.
+    """
 
-def calculate_incremental_target(
-    observation: np.ndarray,
-    target: np.ndarray,
-    config: PinArrayManipulatorConfig,
-    max_step_in_pin_sizes: float,
-) -> Pose:
-    obs_obj = PinArrayEnvObservation.from_array(observation, config.pins_per_side)
-    final_target_pose = Pose.from_array(target)
-
-    translation = obs_obj.object_pose.translation_to(final_target_pose)
-    distance = translation.length()
-    max_step = define_movement_limit(max_step_in_pin_sizes, config)
-
-    if distance <= max_step:
-        return obs_obj.object_pose + translation
-
-    return obs_obj.object_pose + translation.resize(max_step)
-
-
-class ResidualWaypointRLEnv(CompositeControlEnv):
     def __init__(self, *args, manipulator_config: PinArrayManipulatorConfig, **kwargs):
         self.wrapper_max_episode_steps = int(kwargs.pop("max_episode_steps", 2000))
         super().__init__(*args, manipulator_config=manipulator_config, **kwargs)
@@ -60,13 +43,22 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         self.config = manipulator_config
         self.raw_obs_dim = int(np.prod(self.observation_space.shape))
 
+        # [
+        #   rel_x, rel_y, dist,
+        #   goal_dir_x, goal_dir_y,
+        #   object_vel_x, object_vel_y,
+        #   prev_move_x, prev_move_y,
+        #   last_action_x, last_action_y,
+        #   normalized_time
+        # ]
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(10,),
+            shape=(12,),
             dtype=np.float32,
         )
 
+        # PPO chooses raw global dx, dy waypoint command.
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
@@ -74,9 +66,7 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
             dtype=np.float32,
         )
 
-        self.max_step_in_pin_sizes = 0.4
-        self.max_forward_residual = 0.004
-        self.max_lateral_residual = 0.004
+        self.max_xy_step = 0.012
 
         self.base_seek_speed = BASE_SEEK_SPEED
         self.min_seek_speed = MIN_SEEK_SPEED
@@ -85,21 +75,18 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
 
         self.step_count = 0
         self.current_raw_obs = None
-
-        # Important: do NOT call this self.current_target.
-        # CompositeControlEnv / PinArrayEnv owns self.current_target and expects a Pose.
         self.target_array = None
 
         self.prev_object_pos = None
         self.prev_dist = None
         self.prev_move_xy = np.zeros(2, dtype=np.float32)
+        self.last_action = np.zeros(2, dtype=np.float32)
 
     def reset(self, **kwargs):
         raw_obs, info = super().reset(**kwargs)
 
         self.step_count = 0
         self.current_raw_obs = self._trim_raw_obs(raw_obs)
-
         self.target_array = np.asarray(info["target"], dtype=np.float32).copy()
 
         object_pos = self._object_pos(self.current_raw_obs)
@@ -107,6 +94,7 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         self.prev_object_pos = object_pos.copy()
         self.prev_dist = self._xy_distance(object_pos, self.target_array)
         self.prev_move_xy = np.zeros(2, dtype=np.float32)
+        self.last_action = np.zeros(2, dtype=np.float32)
 
         out_info = dict(info)
         out_info["target"] = self.target_array.copy()
@@ -122,6 +110,8 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         self.step_count += 1
 
         policy_action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+        self.last_action = policy_action.copy()
+
         composite_action, debug_info = self._action_to_composite_action(policy_action)
 
         if self.render_mode == "human":
@@ -137,7 +127,7 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         if "target" in info:
             self.target_array = np.asarray(info["target"], dtype=np.float32).copy()
 
-        reward, reward_info = self._compute_reward(self.current_raw_obs)
+        reward, reward_info = self._compute_reward(self.current_raw_obs, policy_action)
 
         success = bool(reward_info["success"])
         timeout = self.step_count >= self.wrapper_max_episode_steps
@@ -162,40 +152,19 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
         return obs, reward, terminated, truncated, out_info
 
     def _action_to_composite_action(self, policy_action):
-        raw_obs = self.current_raw_obs
-        obs_obj = self._parse_obs(raw_obs)
+        obs_obj = self._parse_obs(self.current_raw_obs)
 
         current_pose = obs_obj.object_pose.array().astype(np.float32)
-        current_xy = current_pose[:2]
+        current_pos = current_pose[:3]
 
-        target = self.target_array.copy()
+        delta_xy = policy_action * self.max_xy_step
 
-        nominal_waypoint = calculate_incremental_target(
-            observation=raw_obs,
-            target=target,
-            config=self.config,
-            max_step_in_pin_sizes=self.max_step_in_pin_sizes,
-        ).array().astype(np.float32)
+        waypoint = current_pose.copy()
+        waypoint[0] = current_pos[0] + delta_xy[0]
+        waypoint[1] = current_pos[1] + delta_xy[1]
 
-        goal_vec = target[:2] - current_xy
-        goal_dist = float(np.linalg.norm(goal_vec))
-
-        if goal_dist > 1e-8:
-            goal_dir = goal_vec / goal_dist
-        else:
-            goal_dir = np.zeros(2, dtype=np.float32)
-
-        tangent_dir = np.array([-goal_dir[1], goal_dir[0]], dtype=np.float32)
-
-        forward_residual = self.max_forward_residual * float(policy_action[0])
-        lateral_residual = self.max_lateral_residual * float(policy_action[1])
-
-        residual_xy = forward_residual * goal_dir + lateral_residual * tangent_dir
-
-        waypoint = nominal_waypoint.copy()
-        waypoint[0] += residual_xy[0]
-        waypoint[1] += residual_xy[1]
-        waypoint[2:] = nominal_waypoint[2:]
+        # Keep z + orientation unchanged. This is honest 2DOF XY control.
+        waypoint[2:] = current_pose[2:]
 
         composite_action = np.concatenate(
             [
@@ -206,33 +175,54 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
 
         return composite_action, {
             "executed_waypoint": waypoint.copy(),
-            "nominal_waypoint": nominal_waypoint.copy(),
-            "goal_dist_at_plan": goal_dist,
-            "chosen_forward": float(forward_residual),
-            "chosen_lateral": float(lateral_residual),
+            "chosen_dx": float(delta_xy[0]),
+            "chosen_dy": float(delta_xy[1]),
             "raw_action": policy_action.copy(),
         }
 
-    def _compute_reward(self, raw_obs):
+    def _compute_reward(self, raw_obs, policy_action):
         object_pos = self._object_pos(raw_obs)
 
         curr_dist = self._xy_distance(object_pos, self.target_array)
         progress = float(self.prev_dist - curr_dist)
 
         move_vec = object_pos - self.prev_object_pos
-        move_xy_norm = float(np.linalg.norm(move_vec[:2]))
+        move_xy = move_vec[:2]
+        move_xy_norm = float(np.linalg.norm(move_xy))
+
+        goal_vec = self.target_array[:2] - object_pos[:2]
+        goal_dist = float(np.linalg.norm(goal_vec))
+
+        if goal_dist > 1e-8:
+            goal_dir = goal_vec / goal_dist
+        else:
+            goal_dir = np.zeros(2, dtype=np.float32)
+
+        # This rewards actual object movement toward the goal,
+        # not whether the commanded action points at the goal.
+        movement_toward_goal = float(np.dot(move_xy, goal_dir))
 
         success = curr_dist <= self.success_radius
 
-        progress_reward = 50.0 * progress
-        distance_penalty = -0.5 * curr_dist
+        progress_reward = 80.0 * progress
+        toward_goal_reward = 20.0 * movement_toward_goal
+        distance_penalty = -0.4 * curr_dist
+        action_penalty = -0.01 * float(np.linalg.norm(policy_action))
         step_penalty = -0.002
+
+        stuck_penalty = 0.0
+        if curr_dist > self.success_radius and move_xy_norm < 1e-5:
+            stuck_penalty = -0.01
+
         terminal_reward = 10.0 if success else 0.0
 
         reward_unclipped = (
             progress_reward
+            + toward_goal_reward
             + distance_penalty
+            + action_penalty
             + step_penalty
+            + stuck_penalty
             + terminal_reward
         )
 
@@ -252,10 +242,14 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
 
             "translation_progress": progress,
             "progress_xy": progress,
+            "movement_toward_goal": movement_toward_goal,
 
             "progress_reward": float(progress_reward),
+            "toward_goal_reward": float(toward_goal_reward),
             "distance_penalty": float(distance_penalty),
+            "action_penalty": float(action_penalty),
             "step_penalty": float(step_penalty),
+            "stuck_penalty": float(stuck_penalty),
             "terminal_reward": float(terminal_reward),
             "reward_unclipped": float(reward_unclipped),
 
@@ -271,7 +265,6 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
 
         object_pose = obs_obj.object_pose.array().astype(np.float32)
         object_pos = object_pose[:3]
-
         object_vel = obs_obj.object_velocity.array().astype(np.float32)
 
         rel_xy = self.target_array[:2].astype(np.float32) - object_pos[:2]
@@ -295,6 +288,8 @@ class ResidualWaypointRLEnv(CompositeControlEnv):
                 object_vel[1],
                 self.prev_move_xy[0],
                 self.prev_move_xy[1],
+                self.last_action[0],
+                self.last_action[1],
                 normalized_time,
             ],
             dtype=np.float32,
@@ -344,7 +339,7 @@ def make_env(render_mode=None):
         manipulator_config=config,
     )
 
-    env = ResidualWaypointRLEnv(
+    env = DirectXYRLEnv(
         simulation_object=ball,
         target_generator=target_generator,
         reward_model=reward_model,
@@ -371,15 +366,16 @@ def main():
 
     env = SubprocVecEnv([make_one_env(i) for i in range(n_envs)])
 
+    print("run dir:", PATHS.run_dir)
     print("obs space:", env.observation_space)
     print("action space:", env.action_space)
 
     policy_kwargs = dict(
         net_arch=dict(
-            pi=[128, 128],
-            vf=[128, 128],
+            pi=[256, 256],
+            vf=[256, 256],
         ),
-        log_std_init=-1.0,
+        log_std_init=-0.5,
     )
 
     model = PPO(
@@ -395,17 +391,18 @@ def main():
         gamma=0.98,
         gae_lambda=0.95,
         clip_range=0.15,
-        ent_coef=0.005,
+        ent_coef=0.01,
         vf_coef=0.5,
         max_grad_norm=0.5,
         target_kl=0.03,
         device="cpu",
     )
 
-    model.learn(total_timesteps=10)
-    save_model(model, PATHS, "ppo_2dof_simple_waypoint")
-
-    env.close()
+    try:
+        model.learn(total_timesteps=200_000)
+        save_model(model, PATHS, "ppo_2dof_simple_waypoint")
+    finally:
+        env.close()
 
 
 if __name__ == "__main__":

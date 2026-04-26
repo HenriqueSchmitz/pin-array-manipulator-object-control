@@ -1,13 +1,13 @@
 import sys
 from pathlib import Path
+
 SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
-from rl_common import setup, save_model
-PATHS = setup(__file__, "ppo_6dof", "ppo_6dof_residual")
 
-from datetime import datetime
-from pathlib import Path
+from rl_common import setup, save_model
+
+PATHS = setup(__file__, "ppo_6dof_direct", "ppo_6dof_direct")
 
 import numpy as np
 from gymnasium import spaces
@@ -20,7 +20,6 @@ from pin_array_manipulator_object_control.environment.composite_control_env impo
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
-from pin_array_manipulator_object_control.objects.object import Pose
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
 from pin_array_manipulator_object_control.routines.multi_target_generator import MultiTargetGenerator
 
@@ -29,33 +28,16 @@ BASE_SEEK_SPEED = 5e-4
 MIN_SEEK_SPEED = 1e-4
 
 
-def define_movement_limit(number_of_pin_sizes: float, config: PinArrayManipulatorConfig) -> float:
-    spaces_per_side = config.pins_per_side - 1
-    manipulator_size_no_spaces = config.manipulator_size - config.pin_spacing * spaces_per_side
-    pin_size = manipulator_size_no_spaces / config.pins_per_side
-    return pin_size * number_of_pin_sizes
+class Direct6DOFRLEnv(CompositeControlEnv):
+    """
+    No-cheat 6DOF env.
 
+    PPO directly chooses pose deltas:
+        [dx, dy, dz, droll, dpitch, dyaw]
 
-def calculate_incremental_target(
-    observation: np.ndarray,
-    target: np.ndarray,
-    config: PinArrayManipulatorConfig,
-    max_step_in_pin_sizes: float,
-) -> Pose:
-    obs_obj = PinArrayEnvObservation.from_array(observation, config.pins_per_side)
-    final_target_pose = Pose.from_array(target)
+    Henrique's CompositeControlEnv is only used to translate pose commands to pin commands.
+    """
 
-    translation = obs_obj.object_pose.translation_to(final_target_pose)
-    distance = translation.length()
-    max_step = define_movement_limit(max_step_in_pin_sizes, config)
-
-    if distance <= max_step:
-        return obs_obj.object_pose + translation
-
-    return obs_obj.object_pose + translation.resize(max_step)
-
-
-class Residual6DOFRLEnv(CompositeControlEnv):
     def __init__(self, *args, manipulator_config: PinArrayManipulatorConfig, **kwargs):
         self.wrapper_max_episode_steps = int(kwargs.pop("max_episode_steps", 2000))
         super().__init__(*args, manipulator_config=manipulator_config, **kwargs)
@@ -63,22 +45,20 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         self.config = manipulator_config
         self.raw_obs_dim = int(np.prod(self.observation_space.shape))
 
-        # Observation:
-        # rel_pose[6],
-        # translation_dist[1],
-        # translation_dir[3],
-        # object_velocity[6],
-        # prev_pose_delta[6],
+        # rel_pose[6]
+        # translation_dist[1]
+        # translation_dir[3]
+        # object_velocity[6]
+        # prev_pose_delta[6]
+        # last_action[6]
         # normalized_time[1]
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(23,),
+            shape=(29,),
             dtype=np.float32,
         )
 
-        # Full 6DOF residual:
-        # [dx, dy, dz, droll, dpitch, dyaw]
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
@@ -86,12 +66,8 @@ class Residual6DOFRLEnv(CompositeControlEnv):
             dtype=np.float32,
         )
 
-        self.max_step_in_pin_sizes = 0.4
-
-        # Assumes pose rotation units are radians.
-        # Keep these small. This is residual control, not raw pose control.
-        self.max_xyz_residual = np.array([0.004, 0.004, 0.002], dtype=np.float32)
-        self.max_rpy_residual = np.array([0.035, 0.035, 0.06], dtype=np.float32)
+        self.max_xyz_step = np.array([0.008, 0.008, 0.0000], dtype=np.float32)
+        self.max_rpy_step = np.array([0.0, 0.0, 0.005], dtype=np.float32)
 
         self.base_seek_speed = BASE_SEEK_SPEED
         self.min_seek_speed = MIN_SEEK_SPEED
@@ -101,15 +77,14 @@ class Residual6DOFRLEnv(CompositeControlEnv):
 
         self.step_count = 0
         self.current_raw_obs = None
-
-        # Do NOT call this self.current_target.
-        # Base env owns self.current_target and expects a Pose.
         self.target_array = None
 
         self.prev_object_pose = None
         self.prev_translation_error = None
         self.prev_rotation_error = None
+
         self.prev_pose_delta = np.zeros(6, dtype=np.float32)
+        self.last_action = np.zeros(6, dtype=np.float32)
 
     def reset(self, **kwargs):
         raw_obs, info = super().reset(**kwargs)
@@ -123,7 +98,9 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         self.prev_object_pose = object_pose.copy()
         self.prev_translation_error = self._translation_error(object_pose, self.target_array)
         self.prev_rotation_error = self._rotation_error(object_pose, self.target_array)
+
         self.prev_pose_delta = np.zeros(6, dtype=np.float32)
+        self.last_action = np.zeros(6, dtype=np.float32)
 
         out_info = dict(info)
         out_info["target"] = self.target_array.copy()
@@ -143,6 +120,8 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         self.step_count += 1
 
         policy_action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+        self.last_action = policy_action.copy()
+
         composite_action, debug_info = self._action_to_composite_action(policy_action)
 
         if self.render_mode == "human":
@@ -158,13 +137,18 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         if "target" in info:
             self.target_array = np.asarray(info["target"], dtype=np.float32).copy()
 
-        reward, reward_info = self._compute_reward(self.current_raw_obs)
+        reward, reward_info = self._compute_reward(self.current_raw_obs, policy_action)
+        if base_terminated or base_truncated:
+            reward -= 200.0
+            reward_info["base_failure_penalty"] = -200.0
+        else:
+            reward_info["base_failure_penalty"] = 0.0
 
         success = bool(reward_info["success"])
         timeout = self.step_count >= self.wrapper_max_episode_steps
 
-        terminated = bool(success or base_terminated)
-        truncated = bool(base_truncated or (timeout and not terminated))
+        terminated = bool(success)
+        truncated = bool(timeout)
 
         self._update_reward_state(reward_info)
 
@@ -183,24 +167,15 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         return obs, reward, terminated, truncated, out_info
 
     def _action_to_composite_action(self, policy_action):
-        raw_obs = self.current_raw_obs
-        object_pose = self._object_pose_array(raw_obs)
-        target = self.target_array.copy()
+        current_pose = self._object_pose_array(self.current_raw_obs)
 
-        nominal_waypoint = calculate_incremental_target(
-            observation=raw_obs,
-            target=target,
-            config=self.config,
-            max_step_in_pin_sizes=self.max_step_in_pin_sizes,
-        ).array().astype(np.float32)
+        delta_xyz = policy_action[:3] * self.max_xyz_step
+        delta_rpy = policy_action[3:] * self.max_rpy_step
 
-        xyz_residual = policy_action[:3] * self.max_xyz_residual
-        rpy_residual = policy_action[3:] * self.max_rpy_residual
+        pose_delta = np.concatenate([delta_xyz, delta_rpy]).astype(np.float32)
 
-        pose_residual = np.concatenate([xyz_residual, rpy_residual]).astype(np.float32)
-
-        waypoint = nominal_waypoint.copy()
-        waypoint += pose_residual
+        waypoint = current_pose.copy()
+        waypoint += pose_delta
 
         composite_action = np.concatenate(
             [
@@ -211,16 +186,17 @@ class Residual6DOFRLEnv(CompositeControlEnv):
 
         return composite_action, {
             "executed_waypoint": waypoint.copy(),
-            "nominal_waypoint": nominal_waypoint.copy(),
-            "pose_residual": pose_residual.copy(),
-            "xyz_residual": xyz_residual.copy(),
-            "rpy_residual": rpy_residual.copy(),
+            "chosen_dx": float(delta_xyz[0]),
+            "chosen_dy": float(delta_xyz[1]),
+            "chosen_dz": float(delta_xyz[2]),
+            "chosen_droll": float(delta_rpy[0]),
+            "chosen_dpitch": float(delta_rpy[1]),
+            "chosen_dyaw": float(delta_rpy[2]),
+            "pose_delta_command": pose_delta.copy(),
             "raw_action": policy_action.copy(),
-            "goal_translation_dist_at_plan": self._translation_error(object_pose, target),
-            "goal_rotation_dist_at_plan": self._rotation_error(object_pose, target),
         }
 
-    def _compute_reward(self, raw_obs):
+    def _compute_reward(self, raw_obs, policy_action):
         object_pose = self._object_pose_array(raw_obs)
 
         translation_error = self._translation_error(object_pose, self.target_array)
@@ -230,30 +206,52 @@ class Residual6DOFRLEnv(CompositeControlEnv):
         rotation_progress = float(self.prev_rotation_error - rotation_error)
 
         pose_delta = object_pose - self.prev_object_pose
-        translation_move_norm = float(np.linalg.norm(pose_delta[:3]))
-        rotation_move_norm = float(np.linalg.norm(pose_delta[3:]))
+        move_xyz = pose_delta[:3]
+        move_rpy = pose_delta[3:]
+
+        goal_vec = self.target_array[:3] - object_pose[:3]
+        goal_dist = float(np.linalg.norm(goal_vec))
+
+        if goal_dist > 1e-8:
+            goal_dir = goal_vec / goal_dist
+        else:
+            goal_dir = np.zeros(3, dtype=np.float32)
+
+        # Rewards actual object movement toward the target, not the command direction.
+        movement_toward_goal = float(np.dot(move_xyz, goal_dir))
 
         success = self._is_success(translation_error, rotation_error)
 
-        translation_progress_reward = 50.0 * translation_progress
+        # Tuned to avoid the "die immediately is better than surviving" loophole.
+        translation_progress_reward = 200.0 * translation_progress
         rotation_progress_reward = 2.0 * rotation_progress
+        toward_goal_reward = 50.0 * movement_toward_goal
 
-        translation_penalty = -0.5 * translation_error
-        rotation_penalty = -0.05 * rotation_error
+        translation_penalty = -0.05 * translation_error
+        rotation_penalty = -0.005 * rotation_error
 
-        step_penalty = -0.002
-        terminal_reward = 10.0 if success else 0.0
+        action_penalty = -0.002 * float(np.linalg.norm(policy_action))
+        step_penalty = -0.0005
+
+        stuck_penalty = 0.0
+        if translation_error > self.success_translation_radius and np.linalg.norm(move_xyz[:2]) < 1e-5:
+            stuck_penalty = -0.002
+
+        terminal_reward = 100.0 if success else 0.0
 
         reward_unclipped = (
             translation_progress_reward
             + rotation_progress_reward
+            + toward_goal_reward
             + translation_penalty
             + rotation_penalty
+            + action_penalty
             + step_penalty
+            + stuck_penalty
             + terminal_reward
         )
 
-        reward = float(np.clip(reward_unclipped, -5.0, 15.0))
+        reward = float(np.clip(reward_unclipped, -250.0, 150.0))
 
         return reward, {
             "success": bool(success),
@@ -274,24 +272,28 @@ class Residual6DOFRLEnv(CompositeControlEnv):
             "translation_progress": translation_progress,
             "progress_xy": translation_progress,
             "rotation_progress": rotation_progress,
+            "movement_toward_goal": movement_toward_goal,
 
             "translation_progress_reward": float(translation_progress_reward),
             "rotation_progress_reward": float(rotation_progress_reward),
+            "toward_goal_reward": float(toward_goal_reward),
             "translation_penalty": float(translation_penalty),
             "rotation_penalty": float(rotation_penalty),
+            "action_penalty": float(action_penalty),
             "step_penalty": float(step_penalty),
+            "stuck_penalty": float(stuck_penalty),
             "terminal_reward": float(terminal_reward),
             "reward_unclipped": float(reward_unclipped),
 
             "move_norm": float(np.linalg.norm(pose_delta)),
-            "translation_move_norm": translation_move_norm,
-            "rotation_move_norm": rotation_move_norm,
+            "translation_move_norm": float(np.linalg.norm(move_xyz)),
+            "rotation_move_norm": float(np.linalg.norm(move_rpy)),
             "z_movement": abs(float(pose_delta[2])),
 
             "current_object_pose": object_pose.copy(),
             "current_object_pos": object_pose[:3].copy(),
         }
-
+    
     def _compact_obs(self, raw_obs):
         obs_obj = self._parse_obs(raw_obs)
 
@@ -312,21 +314,20 @@ class Residual6DOFRLEnv(CompositeControlEnv):
 
         return np.concatenate(
             [
-                rel_pose.astype(np.float32),                         # 6
-                np.array([translation_dist], dtype=np.float32),       # 1
-                translation_dir.astype(np.float32),                   # 3
-                object_vel.astype(np.float32),                        # 6
-                self.prev_pose_delta.astype(np.float32),              # 6
-                np.array([normalized_time], dtype=np.float32),        # 1
+                rel_pose.astype(np.float32),
+                np.array([translation_dist], dtype=np.float32),
+                translation_dir.astype(np.float32),
+                object_vel.astype(np.float32),
+                self.prev_pose_delta.astype(np.float32),
+                self.last_action.astype(np.float32),
+                np.array([normalized_time], dtype=np.float32),
             ]
         ).astype(np.float32)
 
     def _update_reward_state(self, reward_info):
         new_pose = reward_info["current_object_pose"].copy()
-
         self.prev_pose_delta = (new_pose - self.prev_object_pose).astype(np.float32)
         self.prev_object_pose = new_pose
-
         self.prev_translation_error = float(reward_info["current_translation_error"])
         self.prev_rotation_error = float(reward_info["current_rotation_error"])
 
@@ -373,7 +374,6 @@ def make_env(render_mode=None):
     )
 
     obj = Ball(diameter=0.1, starting_z=0.2)
-
     reward_model = Distance3DRewardModel(manipulator_config=config)
 
     target_generator = MultiTargetGenerator(
@@ -381,7 +381,7 @@ def make_env(render_mode=None):
         manipulator_config=config,
     )
 
-    env = Residual6DOFRLEnv(
+    env = Direct6DOFRLEnv(
         simulation_object=obj,
         target_generator=target_generator,
         reward_model=reward_model,
@@ -404,7 +404,6 @@ def make_one_env(rank, render_mode=None):
 
 
 def main():
-
     n_envs = 8
 
     env = SubprocVecEnv([make_one_env(i) for i in range(n_envs)])
@@ -418,7 +417,7 @@ def main():
             pi=[256, 256],
             vf=[256, 256],
         ),
-        log_std_init=-1.2,
+        log_std_init=-2.0,
     )
 
     model = PPO(
@@ -434,16 +433,18 @@ def main():
         gamma=0.98,
         gae_lambda=0.95,
         clip_range=0.15,
-        ent_coef=0.005,
+        ent_coef=0.001,
         vf_coef=0.5,
         max_grad_norm=0.5,
         target_kl=0.03,
         device="cpu",
     )
 
-    model.learn(total_timesteps=200_000)
-    save_model(model, PATHS, "ppo_6dof_residual")
-    env.close()
+    try:
+        model.learn(total_timesteps=200_000)
+        save_model(model, PATHS, "ppo_6dof_direct")
+    finally:
+        env.close()
 
 
 if __name__ == "__main__":

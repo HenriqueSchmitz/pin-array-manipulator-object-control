@@ -1,10 +1,13 @@
 import sys
 from pathlib import Path
+
 SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
 from rl_common import setup, load_model
-PATHS = setup(__file__, "test_6dof", "ppo_6dof_residual")
+
+PATHS = setup(__file__, "test_6dof_direct", "ppo_6dof_direct")
 
 import numpy as np
 
@@ -24,7 +27,6 @@ def main():
             obs, reward, terminated, truncated, info = env.step(action)
 
             total_reward += float(reward)
-
             action = np.asarray(action).reshape(-1)
 
             print(
@@ -35,12 +37,13 @@ def main():
                 f"rot_dist={info.get('current_rotation_error', 0.0):.4f} | "
                 f"trans_prog={info.get('translation_progress', 0.0): .6f} | "
                 f"rot_prog={info.get('rotation_progress', 0.0): .6f} | "
-                f"dx={action[0]: .3f} | "
-                f"dy={action[1]: .3f} | "
-                f"dz={action[2]: .3f} | "
-                f"dr={action[3]: .3f} | "
-                f"dp={action[4]: .3f} | "
-                f"dyaw={action[5]: .3f} | "
+                f"dx={info.get('chosen_dx', 0.0): .4f} | "
+                f"dy={info.get('chosen_dy', 0.0): .4f} | "
+                f"dz={info.get('chosen_dz', 0.0): .4f} | "
+                f"droll={info.get('chosen_droll', 0.0): .4f} | "
+                f"dpitch={info.get('chosen_dpitch', 0.0): .4f} | "
+                f"dyaw={info.get('chosen_dyaw', 0.0): .4f} | "
+                f"raw={np.round(action, 3)} | "
                 f"success={info.get('success')} | "
                 f"base_trunc={info.get('base_truncated')}"
             )
@@ -57,7 +60,7 @@ def main():
                         "target": info.get("target"),
                         "object_pose": info.get("current_object_pose"),
                         "executed_waypoint": info.get("executed_waypoint"),
-                        "pose_residual": info.get("pose_residual"),
+                        "pose_delta_command": info.get("pose_delta_command"),
                     },
                 )
                 break
