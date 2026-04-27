@@ -29,7 +29,7 @@ BASE_SEEK_SPEED = 5e-4
 MIN_SEEK_SPEED = 1e-4
 
 N_ENVS = 8
-TOTAL_TIMESTEPS = 200_000
+TOTAL_TIMESTEPS = 1_000_000
 
 
 class ReliableSphere6DOFEnv(CompositeControlEnv):
@@ -86,6 +86,8 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
 
         self.success_radius = 0.018
         self.failure_radius = 0.75
+        self.success_rot_deg = 15.0
+        self.failure_rot_deg = 170.0
 
         self.step_count = 0
         self.current_raw_obs = None
@@ -241,9 +243,6 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
             "chosen_drotvec_y": float(delta_rotvec[1]),
             "chosen_drotvec_z": float(delta_rotvec[2]),
             "chosen_drotvec_norm": float(np.linalg.norm(delta_rotvec)),
-            "chosen_drotvec_y": 0.0,
-            "chosen_drotvec_z": 0.0,
-            "chosen_drotvec_norm": 0.0,
             "executed_roll": float(waypoint[3]),
             "executed_pitch": float(waypoint[4]),
             "executed_yaw": float(waypoint[5]),
@@ -273,8 +272,11 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
         rot_error_deg = self._rotation_error_deg(object_pose, self.target_array)
         rot_progress_deg = float(self.prev_rot_error_deg - rot_error_deg)
 
-        success = bool(curr_dist <= self.success_radius)
-        failure = bool(curr_dist > self.failure_radius)
+        success = bool(
+            curr_dist <= self.success_radius
+            and rot_error_deg <= self.success_rot_deg
+        )
+        failure = bool(curr_dist > self.failure_radius or rot_error_deg > self.failure_rot_deg)
 
         progress_reward = 80.0 * progress
         toward_goal_reward = 20.0 * movement_toward_goal
@@ -307,7 +309,6 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
             + failure_penalty
             + rotation_progress_reward
             + rotation_worsening_penalty
-            + rotation_error_penalty
         )
 
         reward = float(np.clip(reward_unclipped, -5.0, 15.0))
