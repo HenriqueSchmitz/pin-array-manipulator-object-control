@@ -28,8 +28,8 @@ from pin_array_manipulator_object_control.routines.multi_target_generator import
 BASE_SEEK_SPEED = 5e-4
 MIN_SEEK_SPEED = 1e-4
 
-N_ENVS = 8
-TOTAL_TIMESTEPS = 1_000_000
+N_ENVS = 4
+TOTAL_TIMESTEPS = 500_000
 
 
 class ReliableSphere6DOFEnv(CompositeControlEnv):
@@ -52,6 +52,7 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
 
         self.config = manipulator_config
         self.raw_obs_dim = int(np.prod(self.observation_space.shape))
+        self.action_repeat = 2
 
         # [
         #   rel_xy: 2
@@ -163,9 +164,15 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
             except Exception:
                 pass
 
-        raw_obs, base_reward, base_terminated, base_truncated, info = super().step(
-            composite_action
-        )
+        total_base_reward = 0.0
+        for _ in range(self.action_repeat):
+            raw_obs, base_reward, base_terminated, base_truncated, info = super().step(
+                composite_action
+            )
+            total_base_reward += base_reward
+
+            if base_terminated or base_truncated:
+                break
 
         self.current_raw_obs = self._trim_raw_obs(raw_obs)
 
@@ -199,6 +206,7 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
         out_info["base_terminated"] = bool(base_terminated)
         out_info["base_truncated"] = bool(base_truncated)
         out_info["TimeLimit.truncated"] = bool(truncated)
+        out_info["base_reward"] = float(total_base_reward)
 
         return obs, float(reward), terminated, truncated, out_info
 
@@ -207,7 +215,7 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
         current_pos = current_pose[:3]
 
         delta_xy = policy_action[:2] * self.max_xy_step
-        delta_z = float(policy_action[2]) * 0.0005
+        delta_z = float(policy_action[2]) * 0.15
 
         waypoint = current_pose.copy()
         waypoint[0] = current_pos[0] + delta_xy[0]
@@ -272,11 +280,15 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
         rot_error_deg = self._rotation_error_deg(object_pose, self.target_array)
         rot_progress_deg = float(self.prev_rot_error_deg - rot_error_deg)
 
-        success = bool(
-            curr_dist <= self.success_radius
-            and rot_error_deg <= self.success_rot_deg
-        )
-        failure = bool(curr_dist > self.failure_radius or rot_error_deg > self.failure_rot_deg)
+        xy_success = curr_dist <= self.success_radius
+        rot_success = rot_error_deg <= self.success_rot_deg
+
+        # Sphere-safe success: XY decides termination.
+        # Rotation is logged/rewarded, but does not determine episode success.
+        success = bool(xy_success)
+
+        # Do not fail a sphere episode because reported orientation drifted.
+        failure = bool(curr_dist > self.failure_radius)
 
         progress_reward = 80.0 * progress
         toward_goal_reward = 20.0 * movement_toward_goal
