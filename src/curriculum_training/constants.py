@@ -1,130 +1,242 @@
 # =============================================================================
-# ENVIRONMENT AND SIMULATION CONSTANTS
+# CLEAN SPHERE / TRUE 6DOF CURRICULUM CONSTANTS
 # =============================================================================
-# These define the physical setup of the pin array manipulator and the object.
 
-# Manipulator configuration parameters
-MANIPULATOR_SIZE = 1.0  # Overall size of the manipulator in meters
-PINS_PER_SIDE = 15  # Number of pins along each side of the square array
-PIN_HEIGHT = 0.15  # Height of each pin in meters
-ACTUATION_LENGTH = 0.1  # Maximum actuation length for each pin in meters
-PIN_SPACING = 0.001  # Spacing between pins in meters
-HAS_WALL = True  # Whether the manipulator has a surrounding wall
-ROUNDED_PINS = True  # Whether pins have rounded tips for smoother contact
-
-# Object (ball) parameters
-BALL_DIAMETER = 0.1  # Diameter of the ball object in meters
-BALL_STARTING_Z = 0.2  # Initial Z position of the ball in meters
-
-# Episode control
-MAX_EPISODE_STEPS = 2000  # Maximum steps per episode before timeout
+import numpy as np
 
 # =============================================================================
-# ACTION AND CONTROL CONSTANTS
+# RUN CONFIG
 # =============================================================================
-# These control how actions are processed and scaled.
 
-# Seek speeds for contact-seeking behavior
-BASE_SEEK_SPEED = 5e-4  # Base speed for seeking contact
-MIN_SEEK_SPEED = 1e-4  # Minimum speed for seeking contact
+# Use a new run name because true_6dof uses a 24D observation.
+# Old 20D models are not compatible.
+RUN_NAME = "sphere_true_6dof_v1"
 
-# Action processing
-ACTION_REPEAT = 2  # Number of times to repeat each action in the environment
-MAX_XY_STEP = 0.012  # Maximum step size in XY plane per action
+CURRICULUM_MODE = "true_6dof"
+# Options:
+# CURRICULUM_MODE = "xy"
+# CURRICULUM_MODE = "xy_z"
+# CURRICULUM_MODE = "xy_rot"
+# CURRICULUM_MODE = "pose_6d"
+# CURRICULUM_MODE = "true_6dof"
 
-# Z-axis control (limited for stability)
-DELTA_Z_SCALING = 0.15  # Scaling factor for Z delta commands
-Z_CLIP_DELTA = 0.002  # Maximum Z deviation from current position
-
-# Rotation control (small deltas for stability)
-DELTA_ROTVEC_SCALING = [0.05, 0.05, 0.05]  # Scaling for rotation vector deltas (roll, pitch, yaw)
-
-# =============================================================================
-# SUCCESS AND FAILURE THRESHOLDS
-# =============================================================================
-# Thresholds for determining episode success/failure.
-
-# Distance-based thresholds
-SUCCESS_RADIUS = 0.018  # XY distance threshold for success in meters
-FAILURE_RADIUS = 0.75  # XY distance threshold for failure in meters
-
-# Rotation-based thresholds (in degrees)
-SUCCESS_ROT_DEG = 15.0  # Rotation error threshold for success
-FAILURE_ROT_DEG = 170.0  # Rotation error threshold for failure
+# Use 1 while debugging SubprocVecEnv crashes.
+# Once reset/training starts cleanly, set this back to 4.
+N_ENVS = 4
+TOTAL_TIMESTEPS = 500_000
 
 # =============================================================================
-# REWARD COEFFICIENTS
+# MANIPULATOR / OBJECT CONFIG
 # =============================================================================
-# Coefficients for shaping the reward function.
 
-# Progress and movement rewards
-PROGRESS_REWARD_COEFF = 80.0  # Reward for reducing distance to target
-TOWARD_GOAL_REWARD_COEFF = 20.0  # Reward for movement toward the goal
+MANIPULATOR_SIZE = 1.0
+PINS_PER_SIDE = 15
+PIN_HEIGHT = 0.15
+ACTUATION_LENGTH = 0.1
+PIN_SPACING = 0.001
+HAS_WALL = True
+ROUNDED_PINS = True
 
-# Penalties
-DISTANCE_PENALTY_COEFF = -0.4  # Penalty for distance to target
-ACTION_PENALTY_COEFF = -0.01  # Penalty for action magnitude
-STEP_PENALTY_COEFF = -0.002  # Penalty per step
-STUCK_PENALTY_COEFF = -0.01  # Penalty for being stuck
-
-# Rotation-related rewards/penalties
-ROTATION_PROGRESS_REWARD_COEFF = 0.015  # Reward for rotation progress
-ROTATION_WORSENING_PENALTY_COEFF = -0.004  # Penalty for rotation worsening
-ROTATION_SCALING_FACTOR = 20  # Scaling factor for rotation penalties
-
-# Terminal rewards
-TERMINAL_REWARD = 10.0  # Reward for successful episode
-FAILURE_PENALTY = -10.0  # Penalty for failed episode
-
-# Gating and scaling
-XY_GATE_SCALE = 0.06  # Scale for XY gating in rotation rewards
+BALL_DIAMETER = 0.1
+BALL_STARTING_Z = 0.2
 
 # =============================================================================
-# TRAINING CONSTANTS
+# ENV / CONTROL CONFIG
 # =============================================================================
-# Parameters for the training setup.
 
-N_ENVS = 4  # Number of parallel environments
-TOTAL_TIMESTEPS = 300_000  # Total training timesteps
+MAX_EPISODE_STEPS = 2000
+ACTION_REPEAT = 2
+
+BASE_SEEK_SPEED = 5e-4
+MIN_SEEK_SPEED = 1e-4
+
+# Unified observation used by the rewritten training file:
+#   rel_xyz:         3
+#   xyz_dist:        1
+#   goal_dir_xyz:    3
+#   object_vel_xyz:  3
+#   prev_move_xyz:   3
+#   last_action:     6
+#   normalized_time: 1
+#   rot_error_vec:   3
+#   rot_error_rad:   1
+# total = 24
+OBS_DIM = 24
+ACTION_DIM = 6
+
+OBSERVATION_SHAPE = (OBS_DIM,)
+ACTION_SHAPE = (ACTION_DIM,)
+
+# Policy action:
+#   [dx, dy, dz, drotvec_x, drotvec_y, drotvec_z]
+MAX_XY_STEP = 0.015
+MAX_Z_STEP = 0.002
+
+# For XY-only pretraining.
+MAX_ROTVEC_STEP_XY = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+
+# For light auxiliary rotation.
+MAX_ROTVEC_STEP_LIGHT = np.array([0.005, 0.005, 0.005], dtype=np.float32)
+
+# Legacy full pose mode.
+MAX_ROTVEC_STEP_FULL = np.array([0.02, 0.02, 0.02], dtype=np.float32)
+
+# True 6DOF mode.
+# Start conservative; increase only if rotation cannot change.
+MAX_ROTVEC_STEP_TRUE_6DOF = np.array([0.02, 0.02, 0.02], dtype=np.float32)
 
 # =============================================================================
-# PPO HYPERPARAMETERS
+# TARGET CONFIG
 # =============================================================================
-# Hyperparameters for the PPO algorithm.
 
-LEARNING_RATE = 1e-4  # Learning rate for the optimizer
-N_STEPS_BASE = 4096  # Base number of steps per PPO update (divided by N_ENVS)
-BATCH_SIZE = 512  # Batch size for training
-N_EPOCHS = 8  # Number of epochs per PPO update
-GAMMA = 0.98  # Discount factor
-GAE_LAMBDA = 0.95  # GAE lambda parameter
-CLIP_RANGE = 0.15  # PPO clip range
-ENT_COEF = 0.01  # Entropy coefficient
-VF_COEF = 0.5  # Value function coefficient
-MAX_GRAD_NORM = 0.5  # Maximum gradient norm
-TARGET_KL = 0.03  # Target KL divergence for early stopping
-LOG_STD_INIT = -0.5  # Initial log standard deviation for policy
+# Use base generator target unless it is too close.
+TRIVIAL_TARGET_XY_RADIUS = 0.05
 
-# =============================================================================
-# POLICY NETWORK ARCHITECTURE
-# =============================================================================
-# Architecture for the neural network policy.
+# Fallback deterministic target.
+SYNTHETIC_TARGET_DELTA_XY = np.array([0.12, -0.08], dtype=np.float32)
+SYNTHETIC_TARGET_XY_LIMIT = 0.35
 
-POLICY_NET_ARCH = dict(pi=[256, 256], vf=[256, 256])  # Policy and value network layers
+# For true_6dof synthetic fallback.
+# 0.0 means maintain current height while tracking XY + rotation.
+# Try small values like -0.003 or +0.003 only after the basic mode works.
+SYNTHETIC_TARGET_DELTA_Z = 0.0
+
+# Rotation target.
+# For a sphere, this may be physically artificial unless orientation is meaningful.
+SYNTHETIC_TARGET_ROT_DELTA_DEG = np.array([20.0, -10.0, 25.0], dtype=np.float32)
 
 # =============================================================================
-# OBSERVATION AND ACTION SPACE CONSTANTS
+# SUCCESS / FAILURE
 # =============================================================================
-# Shapes for observation and action spaces.
 
-OBSERVATION_SHAPE = (20,)  # Shape of the observation space
-ACTION_SHAPE = (6,)  # Shape of the action space
+SUCCESS_XY_RADIUS = 0.025
+SUCCESS_ROT_DEG = 10.0
+SUCCESS_ROT_RAD = np.deg2rad(SUCCESS_ROT_DEG)
+
+# True 6DOF success thresholds.
+SUCCESS_X_RADIUS = 0.025
+SUCCESS_Y_RADIUS = 0.025
+SUCCESS_Z_RADIUS = 0.010
+SUCCESS_XYZ_RADIUS = 0.035
+
+FAILURE_RADIUS = 0.75
+
+# Conservative bounds. Adjust if your sim workspace differs.
+WORKSPACE_XY_LIMIT = 0.5
+MIN_OBJECT_Z = 0.02
+MAX_OBJECT_Z = 1.0
 
 # =============================================================================
-# SYNTHETIC TARGET CONSTANTS
+# LEGACY / AUXILIARY REWARD CONSTANTS
 # =============================================================================
-# Constants for generating synthetic targets when needed.
 
-SYNTHETIC_TARGET_XY_DELTA = [0.12, -0.08]  # XY offset for synthetic targets
-SYNTHETIC_TARGET_ROT_DELTA_DEG = [20.0, -10.0, 25.0]  # Rotation offset in degrees
-INIT_DIST_THRESHOLD = 0.05  # Threshold for triggering synthetic target generation
+# Kept for compatibility with older branches/modes.
+XY_PROGRESS_REWARD_COEFF = 80.0
+TOWARD_GOAL_REWARD_COEFF = 40.0
+XY_DISTANCE_PENALTY_COEFF = -2.0
+
+STEP_PENALTY_COEFF = -0.01
+STUCK_PENALTY_COEFF = -0.05
+
+TERMINAL_REWARD = 10.0
+
+ROTATION_NEAR_XY_RADIUS = 0.08
+ROTATION_PROGRESS_REWARD_COEFF = 0.01
+ROTATION_WORSENING_PENALTY_COEFF = -0.01
+ROTATION_ERROR_PENALTY_COEFF = -0.001
+ROTATION_SCALING_FACTOR = 1.0
+
+# =============================================================================
+# ADVANCED REWARD CONSTANTS
+# =============================================================================
+
+# XY / xy_rot / pose_6d potential coefficient.
+TASK_POTENTIAL_COEFF = 200.0
+
+# Rotation turns on near the XY goal in non-true-6DOF modes.
+ROTATION_ON_RADIUS = 0.08
+ROTATION_ON_TEMPERATURE = 0.015
+ROTATION_POTENTIAL_WEIGHT = 0.05
+
+# Auxiliary rotation progress only gets credit when XY progress is positive.
+XY_PROGRESS_EPS = 1e-4
+XY_PROGRESS_TEMPERATURE = 5e-4
+AUX_ROT_PROGRESS_COEFF = 0.10
+
+# Penalize buying rotation by worsening XY translation in non-true-6DOF modes.
+ROT_TRANSLATION_CONFLICT_COEFF = 200.0
+
+# Small directional shaping toward XY target.
+DIRECTIONAL_REWARD_COEFF = 20.0
+
+# Smooth dense bonus near target.
+GOAL_KERNEL_COEFF = 0.5
+GOAL_KERNEL_SIGMA = 0.025
+
+# Smooth safety barrier.
+BARRIER_COST_COEFF = 0.05
+BARRIER_MARGIN = 0.04
+BARRIER_SHARPNESS = 50.0
+
+# Control costs.
+ACTION_XY_COST_COEFF = 0.01
+ACTION_Z_COST_COEFF = 0.01
+ACTION_ROT_COST_COEFF = 0.01
+ACTION_JERK_COST_COEFF = 0.005
+
+# Time/stuck costs.
+STEP_COST = 0.01
+STUCK_COST = 0.05
+STUCK_MOVE_EPS = 1e-5
+
+# Terminal terms.
+SUCCESS_BONUS = 10.0
+FAILURE_PENALTY = 10.0
+
+# Reward clipping.
+REWARD_CLIP_LOW = -10.0
+REWARD_CLIP_HIGH = 10.0
+
+# =============================================================================
+# TRUE 6DOF REWARD CONSTANTS
+# =============================================================================
+
+# Per-axis translation weights inside true 6DOF potential.
+POSE_W_X = 1.0
+POSE_W_Y = 1.0
+POSE_W_Z = 1.0
+
+# Rotation energy weight for true 6DOF potential.
+POSE_W_ROT = 0.10
+
+# Potential scale.
+TRUE_6DOF_POTENTIAL_COEFF = 200.0
+
+# Penalize remaining XYZ/Z error.
+XYZ_DISTANCE_COST_COEFF = 2.0
+Z_ERROR_COST_COEFF = 5.0
+
+# Mild penalty on remaining local rotvec components.
+# This is not a true "axis balance" constraint; it is a small stabilizer.
+ROT_AXIS_BALANCE_COST_COEFF = 0.01
+
+# =============================================================================
+# PPO CONFIG
+# =============================================================================
+
+POLICY_NET_ARCH = dict(pi=[256, 256], vf=[256, 256])
+LOG_STD_INIT = -0.5
+
+LEARNING_RATE = 1e-4
+N_STEPS_BASE = 4096
+BATCH_SIZE = 512
+N_EPOCHS = 8
+GAMMA = 0.98
+GAE_LAMBDA = 0.95
+CLIP_RANGE = 0.15
+ENT_COEFF = 0.01
+ENT_COEF = ENT_COEFF
+VF_COEF = 0.5
+MAX_GRAD_NORM = 0.5
+TARGET_KL = 0.03
+DEVICE = "cpu"
