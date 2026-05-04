@@ -24,6 +24,8 @@ from pin_array_manipulator_object_control.objects.ball import Ball
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
 from pin_array_manipulator_object_control.routines.multi_target_generator import MultiTargetGenerator
 
+from curriculum_training.constants import *
+
 
 BASE_SEEK_SPEED = 5e-4
 MIN_SEEK_SPEED = 1e-4
@@ -80,14 +82,14 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
             dtype=np.float32,
         )
 
-        self.max_xy_step = 0.012
+        self.max_xy_step = MAX_XY_STEP
 
         self.base_seek_speed = BASE_SEEK_SPEED
         self.min_seek_speed = MIN_SEEK_SPEED
 
-        self.success_radius = 0.018
+        self.success_radius = SUCCESS_XY_RADIUS
         self.failure_radius = 0.75
-        self.success_rot_deg = 15.0
+        self.success_rot_deg = SUCCESS_ROT_DEG
         self.failure_rot_deg = 170.0
 
         self.step_count = 0
@@ -290,26 +292,26 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
         # Do not fail a sphere episode because reported orientation drifted.
         failure = bool(curr_dist > self.failure_radius)
 
-        progress_reward = 80.0 * progress
-        toward_goal_reward = 20.0 * movement_toward_goal
-        distance_penalty = -0.4 * curr_dist
-        action_penalty = -0.01 * float(np.linalg.norm(policy_action[:2]))
-        step_penalty = -0.002
+        progress_reward = XY_PROGRESS_REWARD_COEFF * progress
+        toward_goal_reward = TOWARD_GOAL_REWARD_COEFF * movement_toward_goal
+        distance_penalty = XY_DISTANCE_PENALTY_COEFF * curr_dist
+        action_penalty = ACTION_PENALTY_COEFF * float(np.linalg.norm(policy_action[:2]))
+        step_penalty = STEP_PENALTY_COEFF
 
         stuck_penalty = 0.0
-        if curr_dist > self.success_radius and move_xy_norm < 1e-5:
-            stuck_penalty = -0.01
+        if curr_dist > self.success_radius and move_xy_norm < STUCK_MOVE_EPS:
+            stuck_penalty = STUCK_PENALTY_COEFF
 
         # Rotation is diagnostic only for sphere. Penalize major worsening very lightly.
-        xy_gate = float(np.exp(-curr_dist / 0.06))
-        rotation_progress_reward = 0.015 * xy_gate * rot_progress_deg
-        rotation_worsening_penalty = -0.004 * xy_gate * max(0.0, -rot_progress_deg)
+        xy_gate = float(np.exp(-curr_dist / ROTATION_NEAR_XY_RADIUS))
+        rotation_progress_reward = ROTATION_PROGRESS_REWARD_COEFF * xy_gate * rot_progress_deg
+        rotation_worsening_penalty = ROTATION_WORSENING_PENALTY_COEFF * xy_gate * max(0.0, -rot_progress_deg)
         
-        rotation_scaling_factor = 20
+        rotation_scaling_factor = ROTATION_SCALING_FACTOR
         rotation_worsening_penalty *= rotation_scaling_factor
 
-        terminal_reward = 10.0 if success else 0.0
-        failure_penalty = -10.0 if failure else 0.0
+        terminal_reward = TERMINAL_REWARD if success else 0.0
+        failure_penalty = -TERMINAL_REWARD if failure else 0.0
 
         reward_unclipped = (
             progress_reward
@@ -324,7 +326,7 @@ class ReliableSphere6DOFEnv(CompositeControlEnv):
             + rotation_progress_reward
         )
 
-        reward = float(np.clip(reward_unclipped, -5.0, 15.0))
+        reward = float(np.clip(reward_unclipped, REWARD_CLIP_LOW, REWARD_CLIP_HIGH))
 
         return reward, {
             "success": success,
