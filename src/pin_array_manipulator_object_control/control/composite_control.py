@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import binary_dilation, gaussian_filter
 
 from pin_array_manipulator_object_control.control.control_policy import ControlPolicy
 from pin_array_manipulator_object_control.control.pose_shift_control import PoseShiftControlPolicy
@@ -12,11 +12,14 @@ from pin_array_manipulator_object_control.manipulator.pin_array_manipulator impo
 class CompositeControlPolicy(ControlPolicy):
     def __init__(self, manipulator_config: PinArrayManipulatorConfig, 
                  base_seek_speed=0.0002, 
-                 min_seek_speed=0.0001):
+                 min_seek_speed=0.0001,
+                 smoothing=0):
         self.pins_per_side = manipulator_config.pins_per_side
         self.num_pins = self.pins_per_side ** 2
+        self.actuation_length = manipulator_config.actuation_length
         self.contact_seeking_policy = ContactSeekingPolicy(manipulator_config, base_seek_speed, min_seek_speed)
         self.pose_shift_control_policy = PoseShiftControlPolicy(manipulator_config)
+        self.smoothing = smoothing
 
     def update_contact_seeking_speeds(self, base_seek_speed, min_seek_speed):
         self.contact_seeking_policy.base_seek_speed = base_seek_speed
@@ -30,8 +33,14 @@ class CompositeControlPolicy(ControlPolicy):
                                                          contact_seeking_heights,
                                                          pose_shift_heights,
                                                          average_heights)
-        self.contact_seeking_policy.sync_state(pin_heights)
-        return pin_heights
+        smoothed_heights = gaussian_filter(pin_heights, sigma=self.smoothing)
+        cliped_heights = np.clip(
+            smoothed_heights, 
+            -self.actuation_length, 
+            self.actuation_length
+        )
+        self.contact_seeking_policy.sync_state(cliped_heights)
+        return cliped_heights
     
     def _choose_height_to_use_per_pin(self,
                                       observation: np.ndarray,
