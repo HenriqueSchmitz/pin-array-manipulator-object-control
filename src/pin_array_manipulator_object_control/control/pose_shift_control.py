@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import LinearNDInterpolator
+from scipy.ndimage import binary_dilation
 
 from pin_array_manipulator_object_control.control.control_policy import ControlPolicy
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
@@ -17,6 +18,7 @@ class PoseShiftControlPolicy(ControlPolicy):
         self.pin_size = self._find_pin_size(manipulator_config)
         self.pin_radius = self.pin_size / 2
         self.grid_points_fixed = self._precompute_pin_grid_coordinates(manipulator_config)
+        self.expected_contact = np.zeros((self.pins_per_side, self.pins_per_side)).astype(bool)
 
     def _find_pin_size(self, manipulator_config: PinArrayManipulatorConfig) -> float:
         spaces_per_side = manipulator_config.pins_per_side - 1
@@ -39,10 +41,14 @@ class PoseShiftControlPolicy(ControlPolicy):
 
     def sample(self, target: np.ndarray, observation: np.ndarray) -> np.ndarray:
         pin_array_observation = PinArrayEnvObservation.from_array(observation, self.pins_per_side)
-        desired_sphere_centers = self._apply_pose_to_target_movement_on_pin_sphere_centers(pin_array_observation,
-                                                                                           target)
-        target_heights = self._place_pin_spheres_in_plane_formed_by_desired_spheres(desired_sphere_centers,
-                                                                                    pin_array_observation)
+        desired_sphere_centers, expected_contact_heights = self._apply_pose_to_target_movement_on_pin_sphere_centers(
+            pin_array_observation,
+            target)
+        target_heights, expected_contact = self._place_pin_spheres_in_plane_formed_by_desired_spheres(
+            desired_sphere_centers,
+            expected_contact_heights,
+            pin_array_observation)
+        self.expected_contact = expected_contact
         pin_heights =  np.clip(
             target_heights, 
             self.min_height, 
@@ -52,11 +58,12 @@ class PoseShiftControlPolicy(ControlPolicy):
     
     def _apply_pose_to_target_movement_on_pin_sphere_centers(self,
                                                              pin_array_observation: PinArrayEnvObservation,
-                                                             target: np.ndarray) -> np.ndarray:
+                                                             target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         relative_movement_transform = self._get_transform_from_current_pose_to_target(pin_array_observation, target)
-        centers = self._get_pin_sphere_centers(pin_array_observation)
+        centers, contact_adjacent_centers = self._get_pin_sphere_centers(pin_array_observation)
         transformed_centers = (relative_movement_transform @ centers)[:3, :].T 
-        return transformed_centers
+        transformed_contact = (relative_movement_transform @ contact_adjacent_centers)[:3, :].T
+        return transformed_centers, transformed_contact
     
     def _get_transform_from_current_pose_to_target(self,
                                                    pin_array_observation: PinArrayEnvObservation,
@@ -85,12 +92,17 @@ class PoseShiftControlPolicy(ControlPolicy):
             sphere_centers.flatten(),
             np.ones(self.num_pins) # One enables rotation on the matrix operation
         ], axis=0)
-        return centers
+        contact_mask = np.abs(pin_array_observation.pin_forces) > 0
+        # contact_pin_or_neighbor_mask = binary_dilation(contact_mask).astype(bool).flatten()
+        contact_pin_or_neighbor_mask = contact_mask.astype(bool).flatten()
+        contact_adjacent_centers = centers[:, contact_pin_or_neighbor_mask]
+        return centers, contact_adjacent_centers
     
     def _place_pin_spheres_in_plane_formed_by_desired_spheres(self,
                                                               desired_sphere_centers: np.ndarray,
+                                                              expected_contact_heights: np.ndarray,
                                                               pin_array_observation: PinArrayEnvObservation
-                                                             ) -> np.ndarray:
+                                                             ) -> tuple[np.ndarray, np.ndarray]:
         interpolator = LinearNDInterpolator(
             desired_sphere_centers[:, :2],
             desired_sphere_centers[:, 2]
@@ -99,4 +111,27 @@ class PoseShiftControlPolicy(ControlPolicy):
         target_heights = (new_pin_shpere_centers + self.pin_radius).reshape(self.pins_per_side, self.pins_per_side)
         invalid_heights = np.isnan(target_heights)
         valid_target_heights = np.where(invalid_heights, pin_array_observation.pin_positions, target_heights)
-        return valid_target_heights
+        expected_contact = np.zeros((self.pins_per_side, self.pins_per_side))
+        if len(expected_contact_heights) < 3:
+            return valid_target_heights, expected_contact.astype(bool)
+        has_x_difference = False
+        has_y_difference = False
+        for expected_height in expected_contact_heights:
+            if not has_x_difference:
+                if expected_contact_heights[0][0] == expected_height[0]:
+                    has_x_difference = True
+            if not has_y_difference:
+                if expected_contact_heights[0][1] == expected_height[1]:
+                    has_x_difference = True
+            if has_x_difference and has_y_difference:
+                break
+        if not has_x_difference or not has_y_difference:
+            return valid_target_heights, expected_contact.astype(bool)
+        contact_interpolator = LinearNDInterpolator(
+            expected_contact_heights[:, :2],
+            expected_contact_heights[:, 2]
+        )
+        new_contact_heights = contact_interpolator(self.grid_points_fixed)
+        no_contact_pins = np.isnan(new_contact_heights).reshape(self.pins_per_side, self.pins_per_side)
+        expected_contact[~no_contact_pins] = 1
+        return valid_target_heights, expected_contact.astype(bool)

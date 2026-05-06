@@ -13,7 +13,7 @@ class CompositeControlPolicy(ControlPolicy):
     def __init__(self, manipulator_config: PinArrayManipulatorConfig, 
                  base_seek_speed=0.0002, 
                  min_seek_speed=0.0001,
-                 smoothing=0):
+                 smoothing=0.0):
         self.pins_per_side = manipulator_config.pins_per_side
         self.num_pins = self.pins_per_side ** 2
         self.actuation_length = manipulator_config.actuation_length
@@ -50,8 +50,9 @@ class CompositeControlPolicy(ControlPolicy):
         pin_array_observation = PinArrayEnvObservation.from_array(observation, self.pins_per_side)
         contact_mask = np.abs(pin_array_observation.pin_forces) > 0
         neighbor_only_contact_mask = binary_dilation(contact_mask).astype(bool) & ~contact_mask
+        expected_contact = self.pose_shift_control_policy.expected_contact
         return np.where(
-            contact_mask, 
+            contact_mask | expected_contact, 
             pose_shift_heights,
             np.where(
                 neighbor_only_contact_mask,
