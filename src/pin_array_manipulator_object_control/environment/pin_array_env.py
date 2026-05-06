@@ -126,10 +126,7 @@ class PinArrayEnv(gym.Env):
         object_assets = self.simulation_object.generate_assets()
         object_body = self.simulation_object.generate_bodies()
         target_visual = self.simulation_object.generate_visual_body(name="target_visualizer")
-        incremental_visual = f"""
-        <body name="incremental_visualizer" mocap="true">
-            <geom type="sphere" size="0.1" rgba="0 0 1 0.2" contype="0" conaffinity="0" group="1"/>
-        </body>"""
+        incremental_visual = self.simulation_object.generate_visual_body(name="incremental_visualizer")
         return f"""
         <mujoco>
             <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81"/>

@@ -1,4 +1,3 @@
-import numpy as np
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel

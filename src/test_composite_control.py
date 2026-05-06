@@ -1,13 +1,13 @@
 import numpy as np
-from pin_array_manipulator_object_control.control.composite_control import CompositeControlPolicy
+
 from pin_array_manipulator_object_control.environment.composite_control_env import CompositeControlEnv
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
 from pin_array_manipulator_object_control.objects.object import Pose
+from pin_array_manipulator_object_control.objects.slab import Slab
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
 from pin_array_manipulator_object_control.routines.multi_target_generator import MultiTargetGenerator
-from pin_array_manipulator_object_control.environment.pin_array_env import PinArrayEnv
 
 
 
@@ -50,6 +50,7 @@ config = PinArrayManipulatorConfig(
     rounded_pins=True
 )
 ball = Ball(diameter=0.1, starting_z=0.2)
+slab = Slab(width=0.2, length=0.2, thickness=0.05)
 reward_model = Distance3DRewardModel(manipulator_config=config)
 target_generator = MultiTargetGenerator(simulation_object=ball, manipulator_config=config)
 
