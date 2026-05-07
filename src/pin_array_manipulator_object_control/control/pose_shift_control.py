@@ -10,7 +10,7 @@ from pin_array_manipulator_object_control.manipulator.pin_array_manipulator impo
 
 
 class PoseShiftControlPolicy(ControlPolicy):
-    def __init__(self, manipulator_config: PinArrayManipulatorConfig):
+    def __init__(self, manipulator_config: PinArrayManipulatorConfig, ramp_intensity: float = 0.0):
         self.pins_per_side = manipulator_config.pins_per_side
         self.num_pins = self.pins_per_side ** 2
         self.max_height = manipulator_config.actuation_length
@@ -19,6 +19,7 @@ class PoseShiftControlPolicy(ControlPolicy):
         self.pin_radius = self.pin_size / 2
         self.grid_points_fixed = self._precompute_pin_grid_coordinates(manipulator_config)
         self.expected_contact = np.zeros((self.pins_per_side, self.pins_per_side)).astype(bool)
+        self.ramp_intensity = ramp_intensity
 
     def _find_pin_size(self, manipulator_config: PinArrayManipulatorConfig) -> float:
         spaces_per_side = manipulator_config.pins_per_side - 1
@@ -48,6 +49,7 @@ class PoseShiftControlPolicy(ControlPolicy):
             desired_sphere_centers,
             expected_contact_heights,
             pin_array_observation)
+        target_heights += self._generate_offsets_to_create_ramp(target, pin_array_observation, expected_contact)
         self.expected_contact = expected_contact
         pin_heights =  np.clip(
             target_heights, 
@@ -93,7 +95,6 @@ class PoseShiftControlPolicy(ControlPolicy):
             np.ones(self.num_pins) # One enables rotation on the matrix operation
         ], axis=0)
         contact_mask = np.abs(pin_array_observation.pin_forces) > 0
-        # contact_pin_or_neighbor_mask = binary_dilation(contact_mask).astype(bool).flatten()
         contact_pin_or_neighbor_mask = contact_mask.astype(bool).flatten()
         contact_adjacent_centers = centers[:, contact_pin_or_neighbor_mask]
         return centers, contact_adjacent_centers
@@ -118,10 +119,10 @@ class PoseShiftControlPolicy(ControlPolicy):
         has_y_difference = False
         for expected_height in expected_contact_heights:
             if not has_x_difference:
-                if expected_contact_heights[0][0] == expected_height[0]:
+                if expected_contact_heights[0][0] != expected_height[0]:
                     has_x_difference = True
             if not has_y_difference:
-                if expected_contact_heights[0][1] == expected_height[1]:
+                if expected_contact_heights[0][1] != expected_height[1]:
                     has_x_difference = True
             if has_x_difference and has_y_difference:
                 break
@@ -135,3 +136,23 @@ class PoseShiftControlPolicy(ControlPolicy):
         no_contact_pins = np.isnan(new_contact_heights).reshape(self.pins_per_side, self.pins_per_side)
         expected_contact[~no_contact_pins] = 1
         return valid_target_heights, expected_contact.astype(bool)
+    
+    def _generate_offsets_to_create_ramp(self,
+                                         target: np.ndarray,
+                                         pin_array_observation: PinArrayEnvObservation,
+                                         expected_contact: np.ndarray) -> np.ndarray:
+        object_pos_2d = pin_array_observation.object_pose.array()[:2]
+        target_pos_2d = target[:2]
+        direction = target_pos_2d - object_pos_2d
+        distance = np.linalg.norm(direction)
+        if distance < 1e-6:
+            return np.zeros((self.pins_per_side, self.pins_per_side))
+        unit_dir = direction / distance
+        relative_grid = self.grid_points_fixed - object_pos_2d
+        projections = relative_grid @ unit_dir
+        ramp_offsets = -self.ramp_intensity * projections
+        gridded_offsets = ramp_offsets.reshape(self.pins_per_side, self.pins_per_side)
+        no_contact_mask = (np.abs(pin_array_observation.pin_forces) > 0).reshape(self.pins_per_side, self.pins_per_side)
+        gridded_offsets[no_contact_mask] = 0
+        gridded_offsets[~expected_contact] = 0
+        return gridded_offsets

@@ -18,6 +18,7 @@ class CompositeControlEnv(PinArrayEnv):
                  reward_model: RewardModel,
                  manipulator_config: Optional[PinArrayManipulatorConfig] = None,
                  smoothing: float = 0,
+                 ramp_intensity: float = 0.0,
                  render_mode: Optional[str] = None,
                  max_episode_steps: int = -1):
         super().__init__(simulation_object,
@@ -28,7 +29,9 @@ class CompositeControlEnv(PinArrayEnv):
                          max_episode_steps)
         if not manipulator_config:
             manipulator_config = PinArrayManipulatorConfig()
-        self.composite_control_policy = CompositeControlPolicy(manipulator_config, smoothing=smoothing)
+        self.composite_control_policy = CompositeControlPolicy(manipulator_config,
+                                                               smoothing=smoothing,
+                                                               ramp_intensity=ramp_intensity)
         incremental_pose_action_length = 6
         contact_seeking_speeds_action_length = 2
         action_space_length = incremental_pose_action_length + contact_seeking_speeds_action_length

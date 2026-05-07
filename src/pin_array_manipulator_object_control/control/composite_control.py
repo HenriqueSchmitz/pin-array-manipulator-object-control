@@ -11,14 +11,15 @@ from pin_array_manipulator_object_control.manipulator.pin_array_manipulator impo
 
 class CompositeControlPolicy(ControlPolicy):
     def __init__(self, manipulator_config: PinArrayManipulatorConfig, 
-                 base_seek_speed=0.0002, 
-                 min_seek_speed=0.0001,
-                 smoothing=0.0):
+                 base_seek_speed: float = 0.0002, 
+                 min_seek_speed: float = 0.0001,
+                 smoothing: float = 0.0,
+                 ramp_intensity: float = 0.0):
         self.pins_per_side = manipulator_config.pins_per_side
         self.num_pins = self.pins_per_side ** 2
         self.actuation_length = manipulator_config.actuation_length
         self.contact_seeking_policy = ContactSeekingPolicy(manipulator_config, base_seek_speed, min_seek_speed)
-        self.pose_shift_control_policy = PoseShiftControlPolicy(manipulator_config)
+        self.pose_shift_control_policy = PoseShiftControlPolicy(manipulator_config, ramp_intensity)
         self.smoothing = smoothing
 
     def update_contact_seeking_speeds(self, base_seek_speed, min_seek_speed):
