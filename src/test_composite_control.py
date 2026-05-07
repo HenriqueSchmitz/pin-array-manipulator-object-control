@@ -61,6 +61,7 @@ env = CompositeControlEnv(
     target_generator=target_generator,
     reward_model=reward_model,
     manipulator_config=config,
+    smoothing=0.4,
     render_mode="human"
 )
 
