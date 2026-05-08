@@ -2,16 +2,20 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from pin_array_manipulator_object_control.objects.object import Object
+
 FINAL_CONVOLUTION_LAYERS = 16
 
 class ResidualTargetNetwork(nn.Module):
-    def __init__(self, pins_per_side, vector_dim=18, output_dim=6, device=None):
+    def __init__(self, pins_per_side, simulation_object: Object, vector_dim=18, output_dim=6, device=None):
         super(ResidualTargetNetwork, self).__init__()
         if device is None:
             device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
         self.pins_per_side = pins_per_side
+        obj_size = simulation_object.get_size()
+        self.object_max_dim = max(obj_size.x, obj_size.y, obj_size.z)
         self.cnn = nn.Sequential(
             nn.Conv2d(2, 4, kernel_size=3),
             nn.ReLU(),
@@ -34,7 +38,10 @@ class ResidualTargetNetwork(nn.Module):
     def forward(self, obs_dict):
         cnn_out = self.cnn(obs_dict['grid'].to(self.device))
         combined = torch.cat([cnn_out, obs_dict['vector'].to(self.device)], dim=1)
-        incremental_target_residual = self.fc(combined)
+        raw_output = self.fc(combined)
+        translation_residual = torch.tanh(raw_output[:, :3]) * self.object_max_dim
+        rotation_residual = torch.tanh(raw_output[:, 3:]) * 180.0 
+        incremental_target_residual = torch.cat([translation_residual, rotation_residual], dim=1)
         object_pose = obs_dict['vector'][:, 6:12].to(self.device)
         return object_pose + incremental_target_residual
 

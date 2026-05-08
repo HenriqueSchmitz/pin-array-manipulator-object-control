@@ -4,7 +4,9 @@ from pin_array_manipulator_object_control.environment.composite_control_env impo
 from pin_array_manipulator_object_control.manipulator.observation import PinArrayEnvObservation
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
+from pin_array_manipulator_object_control.objects.cross_3d import Cross3D
 from pin_array_manipulator_object_control.objects.cylinder import Cylinder
+from pin_array_manipulator_object_control.objects.hollow_box import HollowBox
 from pin_array_manipulator_object_control.objects.object import Pose
 from pin_array_manipulator_object_control.objects.slab import Slab
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
@@ -53,6 +55,8 @@ config = PinArrayManipulatorConfig(
 ball = Ball(diameter=0.1, starting_z=0.2)
 slab = Slab(width=0.2, length=0.2, thickness=0.05, starting_z=0.2)
 cylinder = Cylinder(radius = 0.05, length= 0.2, starting_z=0.2)
+hollow_box = HollowBox(width=0.2, length=0.2, thickness=0.05, starting_z=0.2)
+cross_3d = Cross3D(arm_length=0.2, thickness = 0.04, starting_z=0.2)
 reward_model = Distance3DRewardModel(manipulator_config=config)
 target_generator = MultiTargetGenerator(simulation_object=ball, manipulator_config=config)
 

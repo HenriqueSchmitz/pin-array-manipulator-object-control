@@ -21,7 +21,7 @@ class Cylinder(Object):
             <body name="{self.name}" pos="{self.starting_x} {self.starting_y} {self.starting_z}">
                 <joint type="free"/>
                 <geom type="cylinder" size="{self.radius} {half_length}" 
-                      euler="0 90 0" rgba="0.3 0.3 0.3 1" mass="0.05"/>
+                      euler="0 90 0" rgba="0.3 0.3 0.3 1" mass="0.5"/>
             </body>"""
 
     def generate_visual_body(self, name: str) -> str:

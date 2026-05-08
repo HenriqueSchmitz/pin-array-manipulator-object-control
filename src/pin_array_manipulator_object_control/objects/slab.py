@@ -24,7 +24,7 @@ class Slab(Object):
         object_xml = f"""
             <body name="{self.name}" pos="{self.starting_x} {self.starting_y} {self.starting_z}">
                 <joint type="free"/>
-                <geom type="box" size="{half_x} {half_y} {half_z}" rgba="0.2 0.5 0.8 1" mass="1.0"/>
+                <geom type="box" size="{half_x} {half_y} {half_z}" rgba="0.2 0.5 0.8 1" mass="0.5"/>
             </body>"""
         return object_xml
     

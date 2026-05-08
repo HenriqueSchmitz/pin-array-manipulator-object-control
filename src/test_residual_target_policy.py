@@ -2,10 +2,11 @@ import torch
 import numpy as np
 import os
 
-from pin_array_manipulator_object_control.control.intermediate_target_policy_network import IntermediateTargetNetwork, parse_observation
+from pin_array_manipulator_object_control.control.residual_target_policy_network import ResidualTargetNetwork, parse_observation
 from pin_array_manipulator_object_control.environment.composite_control_env import CompositeControlEnv
 from pin_array_manipulator_object_control.manipulator.pin_array_manipulator import PinArrayManipulatorConfig
 from pin_array_manipulator_object_control.objects.ball import Ball
+from pin_array_manipulator_object_control.objects.cross_3d import Cross3D
 from pin_array_manipulator_object_control.rewards.distance_3d import Distance3DRewardModel
 from pin_array_manipulator_object_control.routines.robust_target_generator import RobustTargetGenerator
 
@@ -26,12 +27,13 @@ def test_model(model_path):
     
     # We use the Ball object as in your training script
     ball = Ball(diameter=0.1, starting_z=0.2)
+    cross_3d = Cross3D(arm_length=0.2, thickness = 0.04, starting_z=0.2)
     reward_model = Distance3DRewardModel(manipulator_config=config)
-    target_generator = RobustTargetGenerator(simulation_object=ball, manipulator_config=config)
+    target_generator = RobustTargetGenerator(simulation_object=cross_3d, manipulator_config=config)
 
     # 2. Initialize Environment in Human Render Mode
     env = CompositeControlEnv(
-        simulation_object=ball,
+        simulation_object=cross_3d,
         target_generator=target_generator,
         reward_model=reward_model,
         manipulator_config=config,
@@ -47,8 +49,19 @@ def test_model(model_path):
         print(f"Error: Model file '{model_path}' not found.")
         return
 
-    # Loading the entire model object
-    model = torch.load(model_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(model_path, map_location=device)
+
+    # Instantiate the model architecture
+    model = ResidualTargetNetwork(
+        pins_per_side=checkpoint['pins_per_side'],
+        simulation_object=cross_3d, # Or use checkpoint['object_max_dim'] to set it manually
+        device=device
+    )
+
+    # Force the attribute just in case the Ball object size differs
+    model.object_max_dim = checkpoint['object_max_dim']
+
+    model.load_state_dict(checkpoint['state_dict'])
     model.to(device)
     model.eval()
     print(f"Loaded model from {model_path}")
@@ -89,7 +102,6 @@ def test_model(model_path):
         env.close()
 
 if __name__ == "__main__":
-    # Change this path to the specific model you want to test
-    # MODEL_FILE = "./models/final_model.pt"
-    MODEL_FILE = "./models/best_model_gen_10.pt"
+    MODEL_FILE = "./models/final_residual_model.pt"
+    # MODEL_FILE = "./models/best_residual_model_gen_5.pt"
     test_model(MODEL_FILE)

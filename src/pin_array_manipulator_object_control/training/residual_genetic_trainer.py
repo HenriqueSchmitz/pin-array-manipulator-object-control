@@ -5,13 +5,14 @@ import torch
 from tqdm import tqdm
 
 from pin_array_manipulator_object_control.control.residual_target_policy_network import ResidualTargetNetwork, parse_observation
+from pin_array_manipulator_object_control.objects.object import Object
 
 
 class ResidualGeneticTrainer:
     def __init__(
         self, 
         env, 
-        model_class, 
+        object: Object, 
         population_size=10, 
         elite_size=3, 
         mutation_power=0.05, 
@@ -23,7 +24,7 @@ class ResidualGeneticTrainer:
         device="cpu"
     ):
         self.env = env
-        self.model_class = model_class
+        self.object = object
         self.pop_size = population_size
         self.elite_size = elite_size
         self.mutation_power = mutation_power
@@ -37,7 +38,7 @@ class ResidualGeneticTrainer:
         
         # Initialize population with random models
         self.population = [
-            ResidualTargetNetwork(self.pins_per_side, device=self.device)
+            ResidualTargetNetwork(self.pins_per_side, self.object, device=self.device)
             for _ in range(population_size)
         ]
 
@@ -132,11 +133,11 @@ class ResidualGeneticTrainer:
             else:
                 # Sparse: Mutate only a subset
                 mask = np.random.rand(*child_weights.shape) < self.sparse_rate
-                noise = np.random.normal(0, self.mutation_power, size=np.sum(mask))
+                noise = np.random.normal(0, self.mutation_power, size=np.sum(mask)) # type: ignore
                 child_weights[mask] += noise
             
             # Create new model and apply weights
-            child_model = IntermediateTargetNetwork(self.pins_per_side, device=self.device)
+            child_model = ResidualTargetNetwork(self.pins_per_side, self.object, device=self.device)
             self._set_weights(child_model, child_weights)
             new_population.append(child_model)
             
