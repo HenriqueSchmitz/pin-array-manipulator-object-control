@@ -11,7 +11,7 @@ class RobustTargetGenerator(PinArrayTargetGenerator):
                  simulation_object: Object, 
                  manipulator_config: Optional[PinArrayManipulatorConfig] = None,
                  margin_factor: float = 0.9,
-                 min_distance: float = 0.15,  # Minimum distance from start
+                 min_distance: float = 0.3,  # Minimum distance from start
                  distance_threshold: Optional[float] = None):
         super().__init__(simulation_object, manipulator_config)
         self.margin_factor = margin_factor
