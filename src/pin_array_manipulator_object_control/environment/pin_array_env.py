@@ -87,7 +87,7 @@ class PinArrayEnv(gym.Env):
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
         mujoco.mj_forward(self.model, self.data) # type: ignore
         observation = self._get_obs()
-        self.target_generator.reset()
+        self.target_generator.reset(seed=seed)
         self.current_target = self.target_generator.get_current_target(observation)
         self._update_target_visual()
         info = self._build_info(observation)

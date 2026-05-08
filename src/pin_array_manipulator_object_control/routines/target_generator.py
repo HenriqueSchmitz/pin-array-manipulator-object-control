@@ -23,7 +23,7 @@ class PinArrayTargetGenerator(ABC):
         self.max_y = self.manipulator_config.manipulator_size/2
     
     @abstractmethod
-    def reset(self) -> None:
+    def reset(self, seed: Optional[int] = None) -> None:
         raise NotImplementedError
     
     def get_current_target(self, observation: PinArrayEnvObservation) -> Optional[Pose]:

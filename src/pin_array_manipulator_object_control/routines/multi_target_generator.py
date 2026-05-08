@@ -21,7 +21,7 @@ class MultiTargetGenerator(PinArrayTargetGenerator):
         self.current_target_pose: Optional[Pose] = None
         self.targets_generated = 0
 
-    def reset(self) -> None:
+    def reset(self, seed: Optional[int] = None) -> None:
         self.current_target_pose = self._pick_random_pose()
 
     def _pick_random_pose(self) -> Optional[Pose]:

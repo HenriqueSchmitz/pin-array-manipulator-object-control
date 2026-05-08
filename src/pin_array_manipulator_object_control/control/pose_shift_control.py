@@ -74,7 +74,7 @@ class PoseShiftControlPolicy(ControlPolicy):
             pin_array_observation.object_pose.array()
         )
         transform_matrix_target_pose = self._get_transformation_matrix_from_pose(target)
-        relative_movement_transform = transform_matrix_target_pose @ np.linalg.inv(transform_matrix_current_pose)
+        relative_movement_transform = transform_matrix_target_pose @ np.linalg.pinv(transform_matrix_current_pose)
         return relative_movement_transform
 
     def _get_transformation_matrix_from_pose(self, pose_array: np.ndarray):
@@ -104,10 +104,13 @@ class PoseShiftControlPolicy(ControlPolicy):
                                                               expected_contact_heights: np.ndarray,
                                                               pin_array_observation: PinArrayEnvObservation
                                                              ) -> tuple[np.ndarray, np.ndarray]:
-        interpolator = LinearNDInterpolator(
-            desired_sphere_centers[:, :2],
-            desired_sphere_centers[:, 2]
-        )
+        try:
+            interpolator = LinearNDInterpolator(
+                desired_sphere_centers[:, :2],
+                desired_sphere_centers[:, 2]
+            )
+        except Exception as e:
+            return np.zeros((self.pins_per_side, self.pins_per_side)), np.zeros((self.pins_per_side, self.pins_per_side)).astype(bool)
         new_pin_shpere_centers = interpolator(self.grid_points_fixed)
         target_heights = (new_pin_shpere_centers + self.pin_radius).reshape(self.pins_per_side, self.pins_per_side)
         invalid_heights = np.isnan(target_heights)
@@ -128,14 +131,18 @@ class PoseShiftControlPolicy(ControlPolicy):
                 break
         if not has_x_difference or not has_y_difference:
             return valid_target_heights, expected_contact.astype(bool)
-        contact_interpolator = LinearNDInterpolator(
-            expected_contact_heights[:, :2],
-            expected_contact_heights[:, 2]
-        )
-        new_contact_heights = contact_interpolator(self.grid_points_fixed)
-        no_contact_pins = np.isnan(new_contact_heights).reshape(self.pins_per_side, self.pins_per_side)
-        expected_contact[~no_contact_pins] = 1
-        return valid_target_heights, expected_contact.astype(bool)
+        try:
+            contact_interpolator = LinearNDInterpolator(
+                expected_contact_heights[:, :2],
+                expected_contact_heights[:, 2]
+            )
+            new_contact_heights = contact_interpolator(self.grid_points_fixed)
+            no_contact_pins = np.isnan(new_contact_heights).reshape(self.pins_per_side, self.pins_per_side)
+            expected_contact[~no_contact_pins] = 1
+        except Exception as e:
+            print(f"Interpolation failed (likely degenerate pose): {e}")
+        finally:
+            return valid_target_heights, expected_contact.astype(bool)
     
     def _generate_offsets_to_create_ramp(self,
                                          target: np.ndarray,

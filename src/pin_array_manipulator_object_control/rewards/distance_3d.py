@@ -13,4 +13,4 @@ class Distance3DRewardModel(RewardModel):
 
     def get_reward(self, target_pose: Pose, object_pose: Pose) -> float:
         distance = object_pose.translation_to(target_pose).length()
-        return 1.0 - (distance / self.space_size)
+        return -(distance / self.space_size)
